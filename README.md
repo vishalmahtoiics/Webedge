@@ -19,6 +19,7 @@ provider.
 | Design direction (M1 gate) | [`docs/DESIGN-DIRECTION.md`](docs/DESIGN-DIRECTION.md) |
 | Running costs | [`docs/COSTS.md`](docs/COSTS.md) |
 | Licence register | [`docs/LICENSES.md`](docs/LICENSES.md) |
+| Provider spike — ready to run once a token exists | [`spike/README.md`](spike/README.md) |
 
 ### Decisions
 
@@ -47,6 +48,9 @@ be built as written. They are listed with options in [`docs/PROVIDER-INTEGRATION
 M0 cannot be signed off until the owner provides a **staging Hostinger account and API token**. Two spike
 deliverables — exercising read endpoints and measuring real rate-limit headroom — need it, and the isolation
 finding above needs live confirmation on a real filesystem before it can be trusted.
+
+The spike itself is written and tested, so it runs the day a token arrives: see [`spike/`](spike/README.md).
+Run the isolation test first — it decides whether ADR-001 stands.
 
 The full list is in [`docs/PROGRESS.md`](docs/PROGRESS.md#blocking-owner-dependencies).
 

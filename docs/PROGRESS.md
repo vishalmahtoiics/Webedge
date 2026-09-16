@@ -47,6 +47,8 @@ start accumulating when M1 ships the first user-facing behaviour.
 | Recurring cost estimate | `docs/COSTS.md` |
 | Licence register | `docs/LICENSES.md` |
 | Repository bootstrap and conventions | `CLAUDE.md`, workspace config |
+| Provider spike harness — read-only capability probe, ready to run | `spike/probe.ts`, `spike/README.md` |
+| Isolation test runbook (spec §5.3 deliverable 3) | `spike/isolation-test.md` |
 
 ### Not delivered, and why
 
@@ -60,6 +62,12 @@ Both gaps need the staging Hostinger account from spec §2.3. Neither can be clo
 The capability matrix was built from official Hostinger artifacts instead (the published MCP server endpoint
 index and the generated `@hostinger/sdk@1.52.1` models). That establishes what endpoints exist and what fields
 they return; it does not establish runtime behaviour.
+
+**The tooling for both is written and tested**, so they run the day a token arrives rather than starting from
+scratch then. `spike/probe.ts` is a zero-dependency read-only probe whose sanitization was verified against a
+mock returning planted secrets; `spike/isolation-test.md` is the manual runbook for the filesystem test,
+which needs writes and therefore the owner's go-ahead. See `spike/README.md` for the order to run them in —
+**the isolation test goes first**, because it decides whether ADR-001 survives.
 
 ### The headline finding
 
