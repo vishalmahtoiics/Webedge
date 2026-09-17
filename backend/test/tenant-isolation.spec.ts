@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PrismaClient, Realm } from '@prisma/client';
 import { TenantScope } from '../src/common/tenant-scope';
+import { CustomerInvoicesService } from '../src/billing/customer-invoices.service';
 import { PrismaService } from '../src/prisma/prisma.service';
 import type { CustomerPrincipal, AdminPrincipal } from '../src/common/principal';
 
@@ -17,12 +18,56 @@ import type { CustomerPrincipal, AdminPrincipal } from '../src/common/principal'
 describe('tenant isolation', () => {
   const prisma = new PrismaClient() as PrismaService;
   const scope = new TenantScope(prisma);
+  const invoices = new CustomerInvoicesService(prisma, scope);
 
   let customerA: string;
   let customerB: string;
   let websiteB: string;
   let domainB: string;
+  let invoiceB: string;
+  let draftA: string;
+  let issuedA: string;
   let principalA: CustomerPrincipal;
+
+  /**
+   * Invoices are written directly rather than through InvoiceService, because
+   * what is under test here is who can read them — seeding through the issuing
+   * path would also consume serial numbers this suite has no use for.
+   */
+  const seedInvoice = (customerId: string, name: string, issued: boolean) =>
+    prisma.invoice.create({
+      data: {
+        customerId,
+        ...(issued
+          ? {
+              invoiceNumber: `ISO/${suffix}/${name}`,
+              financialYear: '2099-00',
+              serialNumber: null,
+              status: 'ISSUED' as const,
+              issuedAt: new Date(),
+            }
+          : { status: 'DRAFT' as const }),
+        supplierStateCode: '27',
+        customerName: name,
+        customerStateCode: '29',
+        placeOfSupply: '29',
+        taxKind: 'IGST',
+        subtotalInPaise: 100_000,
+        igstInPaise: 18_000,
+        totalInPaise: 118_000,
+        lines: {
+          create: [{
+            description: 'Business hosting, 1 year',
+            sacCode: '998315',
+            quantity: 1,
+            unitPriceInPaise: 100_000,
+            gstRateBps: 1800,
+            taxableValueInPaise: 100_000,
+            igstInPaise: 18_000,
+          }],
+        },
+      },
+    });
 
   const suffix = Date.now().toString(36);
 
@@ -68,6 +113,10 @@ describe('tenant isolation', () => {
       data: { customerId: a.id, domain: `a-site-${suffix}.test`, status: 'ACTIVE' },
     });
 
+    invoiceB = (await seedInvoice(b.id, 'Customer B', true)).id;
+    issuedA = (await seedInvoice(a.id, 'Customer A', true)).id;
+    draftA = (await seedInvoice(a.id, 'Customer A', false)).id;
+
     principalA = {
       realm: Realm.CUSTOMER,
       userId: userA.id,
@@ -75,11 +124,12 @@ describe('tenant isolation', () => {
       email: userA.email,
       roleId: role.id,
       roleName: 'CUSTOMER',
-      permissions: new Set(['websites.view', 'domains.view']),
+      permissions: new Set(['websites.view', 'domains.view', 'billing.invoice']),
     };
   });
 
   afterAll(async () => {
+    await prisma.invoice.deleteMany({ where: { customerId: { in: [customerA, customerB] } } });
     await prisma.website.deleteMany({ where: { customerId: { in: [customerA, customerB] } } });
     await prisma.domain.deleteMany({ where: { customerId: { in: [customerA, customerB] } } });
     await prisma.customerUser.deleteMany({ where: { customerId: { in: [customerA, customerB] } } });
@@ -179,5 +229,41 @@ describe('tenant isolation', () => {
       take: 100,
     });
     expect(items.every((w) => w.customerId === customerB)).toBe(true);
+  });
+
+  /**
+   * Invoices are the newest tenant-owned resource and the one where a leak is
+   * worst: an invoice carries a name, a GSTIN and what someone paid.
+   */
+  describe('invoices', () => {
+    it("reports another customer's invoice as not found", async () => {
+      await expect(invoices.get(principalA, invoiceB)).rejects.toMatchObject({
+        response: { code: 'RESOURCE_NOT_FOUND' },
+      });
+    });
+
+    it('lets a customer read their own issued invoice, with its lines', async () => {
+      const invoice = await invoices.get(principalA, issuedA);
+      expect(invoice.customerName).toBe('Customer A');
+      expect(invoice.lines).toHaveLength(1);
+    });
+
+    /**
+     * A draft has no number and is not a tax document. Reported as missing
+     * rather than forbidden, so the answer cannot distinguish "yours but not
+     * issued" from "not yours" — the same rule as a foreign id.
+     */
+    it('does not let a customer read their own draft invoice', async () => {
+      await expect(invoices.get(principalA, draftA)).rejects.toMatchObject({
+        response: { code: 'RESOURCE_NOT_FOUND' },
+      });
+    });
+
+    it('lists only issued invoices, and only the customer\'s own', async () => {
+      const { items, total } = await invoices.list(principalA, { take: 100 });
+
+      expect(total).toBe(1);
+      expect(items.map((i) => i.id)).toEqual([issuedA]);
+    });
   });
 });

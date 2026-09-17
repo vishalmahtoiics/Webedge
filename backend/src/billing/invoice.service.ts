@@ -287,6 +287,47 @@ export class InvoiceService {
     return { financialYear, issued: serials.length, expected: highest, missing, duplicates };
   }
 
+  /**
+   * Staff invoice list. Paginated with a hard ceiling, like every list endpoint.
+   */
+  async list(options: {
+    customerId?: string;
+    status?: InvoiceStatus;
+    financialYear?: string;
+    skip?: number;
+    take?: number;
+  }) {
+    const take = Math.min(Math.max(options.take ?? 25, 1), 100);
+    const skip = Math.max(options.skip ?? 0, 0);
+
+    const where: Prisma.InvoiceWhereInput = {
+      ...(options.customerId ? { customerId: options.customerId } : {}),
+      ...(options.status ? { status: options.status } : {}),
+      ...(options.financialYear ? { financialYear: options.financialYear } : {}),
+    };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.invoice.findMany({
+        where,
+        skip,
+        take,
+        // Serial order, not creation order: an auditor reads the sequence, and
+        // two invoices issued in the same millisecond would otherwise shuffle.
+        orderBy: [{ financialYear: 'desc' }, { serialNumber: 'desc' }, { createdAt: 'desc' }],
+        include: { lines: true },
+      }),
+      this.prisma.invoice.count({ where }),
+    ]);
+
+    return { items, total };
+  }
+
+  async findForAdmin(id: string) {
+    const invoice = await this.prisma.invoice.findUnique({ where: { id }, include: { lines: true } });
+    if (!invoice) throw notFound('invoice');
+    return invoice;
+  }
+
   /** Legal entity details, from system settings once those exist. */
   private async supplierParty(): Promise<Party> {
     return {
