@@ -76,6 +76,17 @@ Changing these needs a reason, not a preference.
   whole family. So never refresh concurrently for one session — `apiAuthed` is the single call site.
 - **`activity_logs` is append-only via a database trigger**, not just revoked grants: the migration role owns
   the table and an owner bypasses its own grants.
+- **Reading the trail is a separate service from writing it.** A failed write is a monitoring problem; a read
+  that returns one row too many is a disclosure. Staff and customers get different methods, not one method
+  with a flag — the same reasoning as two identity tables.
+- **The security trail is its own endpoint, not a filter.** `admin.logs` covers what happened to a customer's
+  resources; `admin.security_logs` covers who can get in and with what. A page that silently drops the rows a
+  viewer lacks permission for looks complete when it is not, so a role without the second permission is told
+  so rather than shown a short list. Which actions are security-sensitive is a rule over the action name, not
+  a maintained list — a forgotten entry would quietly downgrade a credential change to ordinary activity.
+- **A customer never sees a staff member's address in their trail.** Their own user is named; anyone else is
+  "WebEdge support". A staff address identifies a named employee to an outside party and is a valid address
+  to attack.
 - **`ActivityLog` actor columns are deliberately not foreign keys.** With `onDelete: SetNull` the cascade is
   an UPDATE, which the trigger refuses, making accounts undeletable; and a nulled actor is an audit trail that
   forgets who acted. Plain ids plus an `actorEmail` snapshot keep rows immutable and readable after deletion.
@@ -101,6 +112,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `test/tenant-isolation.spec.ts` | Customer A cannot reach Customer B by any path, and a foreign id is indistinguishable from a missing one |
 | `test/route-authorization.e2e-spec.ts` | Walks the real router; fails the build on any route without a permission declaration |
 | `test/activity-log-durability.spec.ts` | The trail survives account deletion, redacts secrets, and cannot be rewritten |
+| `test/activity-read.spec.ts` | A customer's trail excludes internal rows, other tenants and staff identities; the two staff trails partition the table with nothing in both |
 | `src/providers/credential-cipher.service.spec.ts` | Tampered ciphertext, tags and IVs are all rejected |
 | `src/rbac/permissions.catalog.spec.ts` | No role is composed from another realm's keys |
 | `test/sftp-file-transport.spec.ts` | A symlink inside the website cannot be used to read, write or delete outside it |

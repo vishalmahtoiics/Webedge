@@ -7,6 +7,7 @@ const NAV = [
   { href: '/websites', label: 'Websites' },
   { href: '/domains', label: 'Domains' },
   { href: '/billing', label: 'Billing' },
+  { href: '/activity', label: 'Activity' },
 ];
 
 export function PortalShell({
