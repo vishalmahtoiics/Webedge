@@ -16,7 +16,10 @@ Working rules for this repository.
 WebEdge Solution — a white-label hosting control panel and mail platform. Customers manage hosting, domains,
 DNS, files, databases and email through WebEdge and never encounter the underlying provider.
 
-- **Current phase:** 1 (Foundation) — backend and portals done; provider layer next.
+- **Current phase:** 3–4 are built to the limit of what works without a provider account. Auth, RBAC, tenancy,
+  provider credential storage, customer management, dashboard, DNS, the file manager over SFTP, SSL checking
+  and GST/invoicing are all done and tested. What remains needs the staging Hostinger account, Razorpay, or
+  mail infrastructure.
 - **Stack:** NestJS + Prisma + PostgreSQL (backend), Next.js (frontend), Redis + BullMQ (queues).
 
 ## Running it
@@ -100,6 +103,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 
 | `src/billing/gst.spec.ts` | Tax splits, rounding and credit notes reconcile exactly |
 | `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
+| `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps |
 
 Several suites run against real services rather than mocks, because they assert
 things a mock cannot show — that a symlink resolves somewhere its textual path
@@ -108,6 +112,10 @@ does not reveal, that a database trigger refuses an UPDATE. Bring them up with
 
 When you fix a bug, prefer a test that catches the whole class over one that catches the instance. The
 `SUPPORT_STAFF` cross-realm bug is the example: the fix was a rule, not a corrected list.
+
+A concurrency test that passes proves nothing until you have seen it fail. The invoice numbering test was
+checked by swapping the atomic allocator for a naive read-then-write one, which produced 30 missing serials —
+do the same before trusting any test that claims to prove a race is handled.
 
 ## When the blueprint is wrong
 

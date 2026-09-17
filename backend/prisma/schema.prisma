@@ -72,6 +72,13 @@ enum DnsRecordType {
   CAA
 }
 
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PAID
+  VOID
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
@@ -148,6 +155,7 @@ model Customer {
   domains       Domain[]
   subscriptions Subscription[]
   notifications Notification[]
+  invoices      Invoice[]
 
   @@index([status])
   @@map("customers")
@@ -456,6 +464,95 @@ model WebsiteSftpCredential {
   updatedAt DateTime @updatedAt
 
   @@map("website_sftp_credentials")
+}
+
+/// Allocates invoice serial numbers.
+///
+/// GST requires a consecutive serial number, unique within a financial year, with
+/// no gaps (Rule 46(b), CGST Rules). One row per financial year, incremented
+/// atomically — a read-then-write would hand the same number to two concurrent
+/// invoices, which is exactly the defect an auditor looks for.
+model InvoiceSequence {
+  /// Indian financial year, April to March, as "2026-27".
+  financialYear String @id
+  lastNumber    Int    @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("invoice_sequences")
+}
+
+/// An issued invoice.
+///
+/// Amounts are denormalised onto the row rather than recomputed on read: an
+/// invoice is a legal record of what was charged at the time, and it must not
+/// change because a tax rate or a plan price changed afterwards.
+model Invoice {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  /// e.g. "WEB/2026-27/00001". Null only while DRAFT — a number is allocated at
+  /// issue, so an abandoned draft cannot leave a gap in the sequence.
+  invoiceNumber String? @unique
+  financialYear String?
+  serialNumber  Int?
+
+  status InvoiceStatus @default(DRAFT)
+
+  /// Snapshot of both parties as they were when the invoice was issued.
+  supplierStateCode String
+  supplierGstin     String?
+  customerName      String
+  customerGstin     String?
+  customerStateCode String
+  placeOfSupply     String
+  /// CGST_SGST | IGST | ZERO_RATED
+  taxKind           String
+
+  subtotalInPaise  Int
+  discountInPaise  Int @default(0)
+  cgstInPaise      Int @default(0)
+  sgstInPaise      Int @default(0)
+  igstInPaise      Int @default(0)
+  roundOffInPaise  Int @default(0)
+  totalInPaise     Int
+
+  issuedAt DateTime?
+  dueAt    DateTime?
+  paidAt   DateTime?
+  voidedAt DateTime?
+  /// A void invoice keeps its number: GST allows cancellation, never deletion,
+  /// because a missing number reads as a gap.
+  voidReason String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines InvoiceLine[]
+
+  @@index([customerId, createdAt])
+  @@index([status])
+  @@map("invoices")
+}
+
+model InvoiceLine {
+  id        String  @id @default(uuid()) @db.Uuid
+  invoiceId String  @db.Uuid
+  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  description       String
+  sacCode           String
+  quantity          Int
+  unitPriceInPaise  Int
+  gstRateBps        Int
+  taxableValueInPaise Int
+  cgstInPaise       Int @default(0)
+  sgstInPaise       Int @default(0)
+  igstInPaise       Int @default(0)
+
+  @@index([invoiceId])
+  @@map("invoice_lines")
 }
 
 model HostingPlan {
