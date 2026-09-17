@@ -30,7 +30,10 @@ export type InvoiceView = {
   id: string;
   invoiceNumber: string | null;
   financialYear: string | null;
+  kind: Invoice['kind'];
   status: Invoice['status'];
+  againstInvoiceNumber: string | null;
+  againstInvoiceDate: Date | null;
   supplierStateCode: string;
   supplierGstin: string | null;
   customerName: string;
@@ -58,7 +61,11 @@ export function invoiceView(invoice: Invoice & { lines?: InvoiceLine[] }): Invoi
     id: invoice.id,
     invoiceNumber: invoice.invoiceNumber,
     financialYear: invoice.financialYear,
+    kind: invoice.kind,
     status: invoice.status,
+    // A credit note must show what it revises; a plain invoice carries neither.
+    againstInvoiceNumber: invoice.againstInvoiceNumber,
+    againstInvoiceDate: invoice.againstInvoiceDate,
     supplierStateCode: invoice.supplierStateCode,
     supplierGstin: invoice.supplierGstin,
     customerName: invoice.customerName,

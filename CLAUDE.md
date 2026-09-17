@@ -16,10 +16,11 @@ Working rules for this repository.
 WebEdge Solution — a white-label hosting control panel and mail platform. Customers manage hosting, domains,
 DNS, files, databases and email through WebEdge and never encounter the underlying provider.
 
-- **Current phase:** 3–4 are built to the limit of what works without a provider account. Auth, RBAC, tenancy,
-  provider credential storage, customer management, dashboard, DNS, the file manager over SFTP, SSL checking
-  and GST/invoicing are all done and tested. What remains needs the staging Hostinger account, Razorpay, or
-  mail infrastructure.
+- **Current phase:** 3–4 are built to the limit of what works without a provider account, and the staff
+  portal now covers what exists. Auth, RBAC, tenancy, provider credential storage, customer management, both
+  dashboards, DNS, the file manager over SFTP, SSL checking and GST/invoicing are done and tested, and
+  billing is exposed over the API to staff and customers. What remains needs the staging Hostinger account,
+  Razorpay, or mail infrastructure.
 - **Stack:** NestJS + Prisma + PostgreSQL (backend), Next.js (frontend), Redis + BullMQ (queues).
 
 ## Running it
@@ -80,6 +81,9 @@ Changing these needs a reason, not a preference.
   forgets who acted. Plain ids plus an `actorEmail` snapshot keep rows immutable and readable after deletion.
 - **Provider credentials use AES-256-GCM with a versioned key.** GCM authenticates, so tampered ciphertext
   fails loudly instead of yielding a corrupt token. The version allows rotation with overlap.
+- **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
+  is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
+  takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
 - **GST is computed in integer paise, per line, and rounded half away from zero.** Floats lose paise; taxing
   the invoice total diverges from taxing lines the moment rates differ; and `Math.round` turns -0.5 into -0,
   so a credit note would not exactly reverse its invoice.
@@ -103,12 +107,18 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 
 | `src/billing/gst.spec.ts` | Tax splits, rounding and credit notes reconcile exactly |
 | `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
-| `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps |
+| `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps, and a credit note is identifiable as one |
 
 Several suites run against real services rather than mocks, because they assert
 things a mock cannot show — that a symlink resolves somewhere its textual path
 does not reveal, that a database trigger refuses an UPDATE. Bring them up with
 `sudo backend/test/start-test-services.sh`.
+
+Test files run one at a time (`fileParallelism: false`). Several of them assert
+properties of a whole table against one real database — that the serial sequence
+has no gaps, that the trail cannot be rewritten — and in parallel they see each
+other's rows. That failure reads as a defect in the code rather than in the
+setup, which is why it is closed off in config rather than worked around.
 
 When you fix a bug, prefer a test that catches the whole class over one that catches the instance. The
 `SUPPORT_STAFF` cross-realm bug is the example: the fix was a rule, not a corrected list.

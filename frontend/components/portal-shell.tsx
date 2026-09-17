@@ -6,15 +6,19 @@ const NAV = [
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/websites', label: 'Websites' },
   { href: '/domains', label: 'Domains' },
+  { href: '/billing', label: 'Billing' },
 ];
 
 export function PortalShell({
   title,
   description,
+  meta,
   children,
 }: {
   title: string;
   description?: string;
+  /** Sits beside the heading — a freshness stamp, a status, a single action. */
+  meta?: React.ReactNode;
   children: React.ReactNode;
 }) {
   async function signOut() {
@@ -47,7 +51,10 @@ export function PortalShell({
       </header>
 
       <main className="mx-auto max-w-5xl px-5 py-10">
-        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          {meta}
+        </div>
         {description ? <p className="mt-1.5 text-sm text-ink-muted">{description}</p> : null}
         <div className="mt-8">{children}</div>
       </main>

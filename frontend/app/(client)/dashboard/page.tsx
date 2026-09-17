@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
-import { apiAuthed, logout } from '@/lib/api';
+import { apiAuthed } from '@/lib/api';
 import { getSession } from '@/lib/session';
+import { PortalShell } from '@/components/portal-shell';
 import { UsageMeter } from '@/components/usage-meter';
 import { AlertCard } from '@/components/alert-card';
 import { formatRelative } from '@/lib/format';
@@ -46,49 +47,27 @@ export default async function CustomerDashboard() {
   const result = await apiAuthed<Dashboard>('customer', '/customer/dashboard');
   if (!result.ok && result.error.code === 'UNAUTHENTICATED') redirect('/login');
 
-  async function signOut() {
-    'use server';
-    await logout('customer');
-    redirect('/login');
-  }
-
   return (
-    <div className="min-h-screen">
-      <header className="flex h-14 items-center justify-between border-b border-line bg-white px-5">
-        <div className="flex items-center gap-2.5">
-          <span className="h-4 w-0.5 rounded-sm bg-primary" aria-hidden="true" />
-          <span className="text-sm font-semibold tracking-tight">WebEdge Solution</span>
+    <PortalShell
+      title="Dashboard"
+      description="Manage your websites, domains, email and hosting resources from one place."
+      meta={
+        result.ok && result.data.syncedAt ? (
+          <span className="text-xs text-ink-subtle">
+            Updated {formatRelative(result.data.syncedAt)}
+          </span>
+        ) : null
+      }
+    >
+      {!result.ok ? (
+        <div className="rounded-xl border border-line bg-white p-6">
+          <h2 className="text-base font-semibold">We couldn&rsquo;t load your dashboard</h2>
+          <p className="mt-1.5 max-w-prose text-sm text-ink-muted">{result.error.message}</p>
         </div>
-        <form action={signOut}>
-          <button type="submit" className="text-sm text-ink-muted hover:text-ink">
-            Sign out
-          </button>
-        </form>
-      </header>
-
-      <main className="mx-auto max-w-5xl px-5 py-10">
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
-          {result.ok && result.data.syncedAt ? (
-            <span className="text-xs text-ink-subtle">
-              Updated {formatRelative(result.data.syncedAt)}
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-1.5 text-sm text-ink-muted">
-          Manage your websites, domains, email and hosting resources from one place.
-        </p>
-
-        {!result.ok ? (
-          <div className="mt-8 rounded-xl border border-line bg-white p-6">
-            <h2 className="text-base font-semibold">We couldn&rsquo;t load your dashboard</h2>
-            <p className="mt-1.5 max-w-prose text-sm text-ink-muted">{result.error.message}</p>
-          </div>
-        ) : (
-          <DashboardBody data={result.data} />
-        )}
-      </main>
-    </div>
+      ) : (
+        <DashboardBody data={result.data} />
+      )}
+    </PortalShell>
   );
 }
 

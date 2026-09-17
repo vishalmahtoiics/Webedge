@@ -72,6 +72,15 @@ enum DnsRecordType {
   CAA
 }
 
+/// An invoice and a credit note are the same table and the same serial
+/// sequence — a credit note is a tax document in its own right — but they are
+/// not the same document, and a page that cannot tell them apart shows a credit
+/// note as an invoice for a negative amount.
+enum InvoiceKind {
+  INVOICE
+  CREDIT_NOTE
+}
+
 enum InvoiceStatus {
   DRAFT
   ISSUED
@@ -498,7 +507,15 @@ model Invoice {
   financialYear String?
   serialNumber  Int?
 
+  kind   InvoiceKind   @default(INVOICE)
   status InvoiceStatus @default(DRAFT)
+
+  /// Set on a credit note: Rule 53(1A) of the CGST Rules requires it to carry
+  /// the number and date of the invoice it revises. Both are snapshotted rather
+  /// than joined, for the same reason every other party detail here is.
+  againstInvoiceId     String?   @db.Uuid
+  againstInvoiceNumber String?
+  againstInvoiceDate   DateTime?
 
   /// Snapshot of both parties as they were when the invoice was issued.
   supplierStateCode String

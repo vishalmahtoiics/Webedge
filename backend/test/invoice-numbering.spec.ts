@@ -30,19 +30,14 @@ describe('invoice numbering', () => {
     await prisma.$connect();
 
     // auditSequence spans the whole financial year by design — that is what an
-    // auditor checks — so invoices left behind by an earlier failed run would
-    // make it report gaps that this run did not cause. Clear test data first.
-    const stale = await prisma.customer.findMany({
-      where: { email: { endsWith: '@isolation.test' } },
-      select: { id: true },
-    });
-    if (stale.length > 0) {
-      const ids = stale.map((c) => c.id);
-      await prisma.invoice.deleteMany({ where: { customerId: { in: ids } } });
-      await prisma.customer.deleteMany({ where: { id: { in: ids } } });
-    }
-    // The counter is reset too, so serials start from 1 and the audit is exact.
+    // auditor checks — so this suite only means anything if it owns the whole
+    // invoice table. Anything left behind, by an earlier failed run or by hand,
+    // would show up as a gap this run did not cause, or collide with a number
+    // it allocates. Clearing the table and the counter together is what keeps
+    // the two consistent; clearing only one produces exactly that collision.
+    await prisma.invoice.deleteMany({});
     await prisma.invoiceSequence.deleteMany({});
+    await prisma.customer.deleteMany({ where: { email: { endsWith: '@isolation.test' } } });
     const customer = await prisma.customer.create({
       data: {
         fullName: 'Invoice Test Co',
@@ -210,6 +205,34 @@ describe('invoice numbering', () => {
       // in its own right, not an annotation on the invoice.
       expect(credit.invoiceNumber).not.toBe(invoice.invoiceNumber);
       expect(credit.serialNumber).toBe(invoice.serialNumber! + 1);
+    });
+
+    /**
+     * Rule 53(1A) CGST Rules: a credit note carries the number and date of the
+     * invoice it revises. Without this it is a document for a negative amount
+     * that nothing identifies as a credit note — which is how one ends up
+     * displayed as an invoice owing money back.
+     */
+    it('marks a credit note as one and records what it revises', async () => {
+      const invoice = await service.issue(undefined, { customerId, lines: [line(700)] });
+      const credit = await service.creditNoteFor(principal, invoice.id, 'Service not delivered');
+
+      expect(invoice.kind).toBe('INVOICE');
+      expect(credit.kind).toBe('CREDIT_NOTE');
+      expect(credit.againstInvoiceId).toBe(invoice.id);
+      expect(credit.againstInvoiceNumber).toBe(invoice.invoiceNumber);
+      expect(credit.againstInvoiceDate?.getTime()).toBe(invoice.issuedAt?.getTime());
+    });
+
+    /** Crediting a credit note would produce a positive document that reads as
+     *  a second invoice for the same supply. */
+    it('refuses to credit a credit note', async () => {
+      const invoice = await service.issue(undefined, { customerId, lines: [line(700)] });
+      const credit = await service.creditNoteFor(principal, invoice.id, 'Service not delivered');
+
+      await expect(
+        service.creditNoteFor(principal, credit.id, 'again'),
+      ).rejects.toMatchObject({ response: { code: 'CONFLICT' } });
     });
 
     it('refuses to credit an invoice that was already voided', async () => {

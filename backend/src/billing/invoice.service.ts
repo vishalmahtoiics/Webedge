@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { InvoiceStatus, Prisma } from '@prisma/client';
+import { InvoiceKind, InvoiceStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { AppError, notFound } from '../common/errors';
@@ -23,6 +23,18 @@ export type IssueInvoiceInput = {
   lines: LineItem[];
   discountInPaise?: number;
   dueAt?: Date;
+};
+
+/**
+ * What makes a document a credit note rather than an invoice. Set only by
+ * `creditNoteFor`, never from a request: a credit note that references nothing
+ * is not a valid tax document, and one that references an invoice it does not
+ * reverse is worse.
+ */
+type CreditNoteAgainst = {
+  id: string;
+  number: string | null;
+  date: Date | null;
 };
 
 /**
@@ -82,7 +94,11 @@ export class InvoiceService {
    * The number is allocated and the invoice written in one transaction, so a
    * failure anywhere leaves neither a numbered invoice nor a consumed number.
    */
-  async issue(principal: Principal | undefined, input: IssueInvoiceInput) {
+  async issue(
+    principal: Principal | undefined,
+    input: IssueInvoiceInput,
+    against?: CreditNoteAgainst,
+  ) {
     const customer = await this.prisma.customer.findUnique({ where: { id: input.customerId } });
     if (!customer) throw notFound('customer');
 
@@ -115,7 +131,12 @@ export class InvoiceService {
           invoiceNumber: formatInvoiceNumber(financialYear, serial),
           financialYear,
           serialNumber: serial,
+          kind: against ? InvoiceKind.CREDIT_NOTE : InvoiceKind.INVOICE,
           status: InvoiceStatus.ISSUED,
+
+          againstInvoiceId: against?.id ?? null,
+          againstInvoiceNumber: against?.number ?? null,
+          againstInvoiceDate: against?.date ?? null,
 
           // Snapshotted: an invoice records what was charged then, and must not
           // change because a rate or an address changed later.
@@ -156,14 +177,19 @@ export class InvoiceService {
       });
     });
 
-    await this.activity.record(principal, {
-      action: 'billing.invoice.issued',
-      customerId: customer.id,
-      resourceType: 'invoice',
-      resourceId: invoice.id,
-      visibility: 'CUSTOMER',
-      newValue: { invoiceNumber: invoice.invoiceNumber, totalInPaise: invoice.totalInPaise },
-    });
+    // A credit note is logged by `creditNoteFor`, which knows the reason and
+    // what it reverses. Logging here as well would put two rows in the trail for
+    // one document, one of them missing half the story.
+    if (!against) {
+      await this.activity.record(principal, {
+        action: 'billing.invoice.issued',
+        customerId: customer.id,
+        resourceType: 'invoice',
+        resourceId: invoice.id,
+        visibility: 'CUSTOMER',
+        newValue: { invoiceNumber: invoice.invoiceNumber, totalInPaise: invoice.totalInPaise },
+      });
+    }
 
     return invoice;
   }
@@ -225,23 +251,40 @@ export class InvoiceService {
       throw new AppError('CONFLICT', 'That invoice was voided, so there is nothing to credit.');
     }
 
-    const credit = await this.issue(principal, {
-      customerId: original.customerId,
-      lines: original.lines.map((line) => ({
-        description: `Credit: ${line.description}`,
-        unitPriceInPaise: -line.unitPriceInPaise,
-        quantity: line.quantity,
-        sacCode: line.sacCode,
-        gstRateBps: line.gstRateBps,
-      })),
-    });
+    // Crediting a credit note would produce a positive document that reads as a
+    // second invoice for the same supply. If more was credited than should have
+    // been, the correction is a fresh invoice, not a credit of a credit.
+    if (original.kind === InvoiceKind.CREDIT_NOTE) {
+      throw new AppError('CONFLICT', 'A credit note cannot itself be credited.');
+    }
+
+    const credit = await this.issue(
+      principal,
+      {
+        customerId: original.customerId,
+        lines: original.lines.map((line) => ({
+          description: `Credit: ${line.description}`,
+          unitPriceInPaise: -line.unitPriceInPaise,
+          quantity: line.quantity,
+          sacCode: line.sacCode,
+          gstRateBps: line.gstRateBps,
+        })),
+      },
+      { id: original.id, number: original.invoiceNumber, date: original.issuedAt },
+    );
 
     await this.activity.record(principal, {
       action: 'billing.credit_note.issued',
       customerId: original.customerId,
       resourceType: 'invoice',
       resourceId: credit.id,
-      newValue: { against: original.invoiceNumber, reason },
+      visibility: 'CUSTOMER',
+      newValue: {
+        creditNoteNumber: credit.invoiceNumber,
+        against: original.invoiceNumber,
+        totalInPaise: credit.totalInPaise,
+        reason,
+      },
     });
 
     return credit;
