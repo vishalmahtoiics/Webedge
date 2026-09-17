@@ -33,3 +33,12 @@ if ! command -v doveadm >/dev/null 2>&1; then
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dovecot-core >/dev/null 2>&1 || true
 fi
 echo "doveadm: $(command -v doveadm >/dev/null 2>&1 && echo 'available' || echo 'MISSING — mailbox password tests will fail')"
+
+# Also no daemon: `postmap -q` runs the real Postfix lookup maps against the
+# real database, which is how the queries that decide who receives mail are
+# checked. Reading the SQL proves nothing — a query matching one row too many
+# looks correct on the page.
+if ! command -v postmap >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postfix postfix-pgsql >/dev/null 2>&1 || true
+fi
+echo "postmap: $(postconf -m 2>/dev/null | grep -qx pgsql && echo 'available with pgsql' || echo 'MISSING — lookup map tests will fail')"

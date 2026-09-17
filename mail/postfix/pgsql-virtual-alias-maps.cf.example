@@ -1,0 +1,23 @@
+# Forwarding.
+#
+# unnest() over the destinations array returns one row per destination, and
+# Postfix's pgsql client concatenates the rows with commas before handing the
+# result to virtual_alias_maps — which is exactly the comma-separated list that
+# map expects. Checked with `postmap -q`, not assumed: the first version of this
+# comment claimed Postfix returned the rows separately, and it does not.
+#
+# That comma join is only safe because an address cannot contain one. RFC 5321
+# allows a comma inside a quoted local part; `mail-address.ts` refuses quoted
+# local parts at creation, so no destination stored here can ever split into two
+# addresses on its way through this map.
+#
+# Catch-all is a separate map (pgsql-virtual-alias-catchall.cf) queried after
+# this one, so a named alias always wins over `*`. Putting both in one query
+# would make the precedence depend on row order, which nothing guarantees.
+
+hosts = 127.0.0.1
+user = webedge
+password = CHANGE_ME
+dbname = webedge
+
+query = SELECT unnest(a.destinations) FROM mail_aliases a JOIN mail_domains d ON d.id = a."domainId" WHERE a."localPart" = '%u' AND d.name = '%d' AND a."isActive" = true AND d.status = 'ACTIVE'

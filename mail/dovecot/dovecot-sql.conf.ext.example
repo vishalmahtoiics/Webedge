@@ -1,0 +1,40 @@
+# Dovecot's password and user lookups.
+#
+# Copy to dovecot-sql.conf.ext and fill in the credentials. The real file stays
+# out of the repository: it carries a database password.
+
+driver = pgsql
+connect = host=127.0.0.1 dbname=webedge user=webedge password=CHANGE_ME
+
+# The stored value already carries its scheme — "{ARGON2ID}$argon2id$v=19$..." —
+# written by WebEdge and read by Dovecot's own ARGON2ID scheme. Confirmed
+# against a real `doveadm pw -t` in src/mail/mail-password.spec.ts rather than
+# assumed, because a format mismatch surfaces as every customer being unable to
+# collect their mail.
+default_pass_scheme = ARGON2ID
+
+# Same conditions as the Postfix maps, and for the same reason: a mailbox on an
+# unverified or suspended domain must not authenticate, and the mailbox row
+# alone does not say what state its domain is in.
+password_query = \
+  SELECT m."localPart" || '@' || d.name AS user, m."passwordHash" AS password \
+  FROM mailboxes m JOIN mail_domains d ON d.id = m."domainId" \
+  WHERE m."localPart" = '%n' AND d.name = '%d' \
+    AND m."isActive" = true AND d.status = 'ACTIVE'
+
+# uid/gid are the single system account the mail store runs as; per-mailbox
+# separation is by path, not by Unix user.
+user_query = \
+  SELECT d.name || '/' || m."localPart" || '/' AS home, \
+         5000 AS uid, 5000 AS gid, \
+         CASE WHEN m."quotaMib" IS NULL THEN '' \
+              ELSE '*:bytes=' || (m."quotaMib" * 1048576)::text END AS quota_rule \
+  FROM mailboxes m JOIN mail_domains d ON d.id = m."domainId" \
+  WHERE m."localPart" = '%n' AND d.name = '%d' \
+    AND m."isActive" = true AND d.status = 'ACTIVE'
+
+# Used by `doveadm -A`, which needs to enumerate every mailbox.
+iterate_query = \
+  SELECT m."localPart" AS username, d.name AS domain \
+  FROM mailboxes m JOIN mail_domains d ON d.id = m."domainId" \
+  WHERE m."isActive" = true AND d.status = 'ACTIVE'

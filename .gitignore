@@ -39,3 +39,7 @@ next-env.d.ts
 
 # Monaco is copied from node_modules at build time, not committed
 frontend/public/monaco/
+
+# Mail server configs carry a database password.
+mail/postfix/*.cf
+mail/dovecot/*.conf.ext

@@ -133,6 +133,11 @@ Changing these needs a reason, not a preference.
 - **A mail domain must prove ownership before mail is accepted for it.** Otherwise one customer adds
   another's domain and starts receiving their mail. `postmaster`, `abuse` and the addresses a certificate
   authority accepts as proof of control are reserved and never handed to a customer.
+- **Postfix and Dovecot read the same database the panel writes to, and re-check everything.** No sync job,
+  no flat file to regenerate, no window where the two disagree. Every lookup query in `mail/` filters on
+  `mail_domains.status = 'ACTIVE'` and on the row's own `isActive`, duplicating what the panel already
+  refuses — because the panel is not what answers the connection on port 25. If a row ever reaches ACTIVE
+  without proof of ownership, these queries are what still stands between it and a stranger's mail.
 - **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
   is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
   takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
@@ -165,14 +170,16 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
 | `src/mail/mail-routing.spec.ts` | An alias cycle is found before it is written, and a diamond is not mistaken for one |
+| `test/mail-lookup-maps.spec.ts` | A real `postmap -q` refuses an unverified domain, a suspended one, and a switched-off mailbox or alias |
 | `test/mail-tenancy.spec.ts` | A mailbox is unreachable except through a domain the caller owns, an unverified domain carries nothing, and the plan allowance is counted across every domain |
 | `test/subscription-lifecycle.spec.ts` | Renewing keeps the anniversary, cancelling keeps the paid period, a plan change credits only the unused part, and the catalogue never names the upstream product |
 
 Several suites run against real services rather than mocks, because they assert
 things a mock cannot show — that a symlink resolves somewhere its textual path
 does not reveal, that a database trigger refuses an UPDATE, that Dovecot accepts
-a hash written here. Bring them up with `sudo backend/test/start-test-services.sh`,
-which also installs `dovecot-core` for `doveadm`. The mailbox password suite
+a hash written here, that Postfix's own lookup refuses an unverified domain.
+Bring them up with `sudo backend/test/start-test-services.sh`, which also
+installs `dovecot-core` and `postfix-pgsql` for `doveadm` and `postmap`. The mailbox password suite
 fails rather than skipping when it is missing: a green run that proved nothing is
 worse than a visible gap.
 
@@ -205,7 +212,7 @@ observed behaviour:
 2. Provider integration — multiple Hostinger accounts, encrypted credentials, resource mapping
 3. Hosting panel — dashboard, domains, websites, storage, DNS, file manager, editor
 4. Advanced hosting — databases, SSL, backups, WordPress
-5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail ← *panel and rules built; needs servers*
+5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail ← *panel, rules and lookup maps built; needs servers*
 6. Business — plans, orders, Razorpay, invoices, renewals ← *current; everything but Razorpay*
 7. Scale — multiple providers, queues, monitoring, migration tools
 

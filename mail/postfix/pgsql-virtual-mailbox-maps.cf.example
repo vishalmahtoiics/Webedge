@@ -1,0 +1,18 @@
+# Which addresses have a mailbox on this server.
+#
+# Returns the maildir path, which is what Postfix hands to the delivery agent.
+# The path is built from the domain and local part as stored — both are
+# validated on the way in, so neither can contain a slash, a NUL or `..`.
+# `mail-address.ts` refuses those at creation precisely so this concatenation is
+# safe.
+#
+# The join to mail_domains is not decoration: a mailbox on a domain that was
+# suspended must stop receiving mail, and the mailbox row alone does not say so.
+# `is_active` covers a mailbox suspended on its own.
+
+hosts = 127.0.0.1
+user = webedge
+password = CHANGE_ME
+dbname = webedge
+
+query = SELECT d.name || '/' || m."localPart" || '/' FROM mailboxes m JOIN mail_domains d ON d.id = m."domainId" WHERE m."localPart" = '%u' AND d.name = '%d' AND m."isActive" = true AND d.status = 'ACTIVE'

@@ -1,0 +1,18 @@
+# Which domains this server accepts mail for.
+#
+# Copy to pgsql-virtual-mailbox-domains.cf and fill in the credentials. The real
+# file is not in the repository: it carries a database password, and a password
+# in git is a password that has leaked.
+#
+# ACTIVE only. A domain whose ownership has not been proved must not receive
+# mail, and this query is where that is finally enforced — the panel refuses to
+# build on an unverified domain, but the panel is not what accepts the
+# connection on port 25. If a row ever reaches an unexpected state, this is the
+# check that still holds.
+
+hosts = 127.0.0.1
+user = webedge
+password = CHANGE_ME
+dbname = webedge
+
+query = SELECT 1 FROM mail_domains WHERE name = '%s' AND status = 'ACTIVE'

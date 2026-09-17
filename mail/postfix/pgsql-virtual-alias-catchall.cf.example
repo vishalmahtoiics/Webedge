@@ -1,0 +1,11 @@
+# The domain catch-all, queried only after the named-alias map misses.
+#
+# Listed after pgsql-virtual-alias-maps.cf in virtual_alias_maps, so Postfix
+# consults it second and a named alias always wins.
+
+hosts = 127.0.0.1
+user = webedge
+password = CHANGE_ME
+dbname = webedge
+
+query = SELECT unnest(a.destinations) FROM mail_aliases a JOIN mail_domains d ON d.id = a."domainId" WHERE a."localPart" = '*' AND d.name = '%d' AND a."isActive" = true AND d.status = 'ACTIVE'
