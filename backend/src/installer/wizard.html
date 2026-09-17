@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Install WebEdge</title>
+<style>
+  :root {
+    --harbor: #0f1a2a; --edge: #3fc1c9; --primary: #0a7285; --primary-hover: #085e6e;
+    --canvas: #f5f7fa; --ink: #142033; --ink-muted: #566175; --line: #e4e8ee;
+    --line-input: #7e8a9c; --ok: #177444; --warn: #a15c07; --bad: #b42318; --white: #fff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--canvas); color: var(--ink);
+    font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  header { background: var(--harbor); color: #fff; padding: 14px 20px; display: flex; gap: 10px; align-items: center; }
+  header span.mark { width: 3px; height: 16px; background: var(--edge); border-radius: 2px; }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 64px; }
+  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 17px; margin: 0 0 4px; }
+  p.lede { color: var(--ink-muted); margin: 0 0 24px; }
+  section { background: var(--white); border: 1px solid var(--line); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  label { display: block; margin-bottom: 14px; }
+  label > span { display: block; font-weight: 600; font-size: 14px; margin-bottom: 6px; }
+  label > small { display: block; color: var(--ink-muted); font-size: 13px; margin-top: 4px; }
+  input[type=text], input[type=password], input[type=number], input[type=email], select {
+    width: 100%; height: 40px; padding: 0 11px; font: inherit; font-size: 14px;
+    border: 1px solid var(--line-input); border-radius: 8px; background: #fff;
+  }
+  input:focus, select:focus { outline: 2px solid rgba(10,114,133,.3); outline-offset: 1px; }
+  .row { display: grid; grid-template-columns: 1fr 140px; gap: 12px; }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .row, .row-2 { grid-template-columns: 1fr; } }
+  button {
+    height: 40px; padding: 0 18px; font: inherit; font-weight: 600; font-size: 14px;
+    border-radius: 8px; border: 0; background: var(--primary); color: #fff; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--primary-hover); }
+  button:disabled { opacity: .55; cursor: default; }
+  button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line-input); }
+  .check { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+  .check:first-of-type { border-top: 0; }
+  .badge {
+    flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    font-size: 12px; font-weight: 700; margin-top: 2px; border: 1px solid;
+  }
+  .pass { color: var(--ok); border-color: rgba(23,116,68,.35); background: rgba(23,116,68,.07); }
+  .warn { color: var(--warn); border-color: rgba(161,92,7,.35); background: rgba(161,92,7,.07); }
+  .fail { color: var(--bad); border-color: rgba(180,35,24,.35); background: rgba(180,35,24,.07); }
+  .check-body strong { display: block; font-size: 14px; }
+  .check-body p { margin: 2px 0 0; font-size: 13.5px; color: var(--ink-muted); }
+  .check-body p.action { color: var(--ink); }
+  .notice { border-radius: 8px; padding: 12px 14px; font-size: 14px; margin-bottom: 16px; border: 1px solid; }
+  .notice.bad { color: var(--bad); border-color: rgba(180,35,24,.3); background: rgba(180,35,24,.05); }
+  .notice.good { color: var(--ok); border-color: rgba(23,116,68,.3); background: rgba(23,116,68,.05); }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  .secret { background: var(--canvas); border: 1px solid var(--line); border-radius: 8px; padding: 12px; word-break: break-all; }
+  .steps li { margin-bottom: 6px; }
+  fieldset { border: 0; padding: 0; margin: 0 0 8px; }
+  fieldset label { display: flex; gap: 9px; align-items: flex-start; font-weight: 400; margin-bottom: 10px; }
+  fieldset input { margin-top: 3px; }
+  fieldset label > span { font-weight: 600; margin-bottom: 2px; }
+  .hidden { display: none; }
+  .muted { color: var(--ink-muted); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<header><span class="mark"></span><strong>WebEdge Solution</strong><span style="opacity:.7">installer</span></header>
+<main>
+
+<div id="gate">
+  <h1>Install WebEdge</h1>
+  <p class="lede">Paste the setup token printed in the terminal where you started the installer.</p>
+  <section>
+    <label>
+      <span>Setup token</span>
+      <input type="password" id="token" autocomplete="off" spellcheck="false" />
+      <small>It proves you have access to this server. Until an administrator exists, there is nothing else to prove.</small>
+    </label>
+    <div id="gate-error"></div>
+    <button id="unlock">Continue</button>
+  </section>
+</div>
+
+<form id="wizard" class="hidden">
+  <h1>Install WebEdge</h1>
+  <p class="lede">Four things to fill in. Everything else is generated or detected.</p>
+
+  <section>
+    <h2>This machine</h2>
+    <p class="muted" style="margin:0 0 12px">Checked before anything is written.</p>
+    <div id="checks"></div>
+  </section>
+
+  <section>
+    <h2>Database</h2>
+    <p class="muted" style="margin:0 0 14px">PostgreSQL 14 or newer, with a database already created.</p>
+    <div class="row">
+      <label><span>Host</span><input type="text" id="db-host" value="127.0.0.1" /></label>
+      <label><span>Port</span><input type="number" id="db-port" value="5432" /></label>
+    </div>
+    <label><span>Database name</span><input type="text" id="db-name" value="webedge" /></label>
+    <div class="row-2">
+      <label><span>User</span><input type="text" id="db-user" value="webedge" /></label>
+      <label><span>Password</span><input type="password" id="db-password" autocomplete="off" /></label>
+    </div>
+    <button type="button" class="secondary" id="test-db">Test the connection</button>
+    <div id="db-result" style="margin-top:14px"></div>
+  </section>
+
+  <section>
+    <h2>Administrator</h2>
+    <p class="muted" style="margin:0 0 14px">The first staff account. It gets every permission.</p>
+    <label><span>Full name</span><input type="text" id="admin-name" /></label>
+    <label><span>Email</span><input type="email" id="admin-email" autocomplete="off" /></label>
+    <label>
+      <span>Password</span>
+      <input type="text" id="admin-password" class="mono" autocomplete="off" />
+      <small>Generated for you. Change it if you prefer — at least 12 characters. It is shown once and stored hashed; a forgotten one is reset, never retrieved.</small>
+    </label>
+  </section>
+
+  <section>
+    <h2>Application</h2>
+    <div class="row-2">
+      <label><span>Customer portal URL</span><input type="text" id="client-origin" value="http://localhost:3000" /></label>
+      <label><span>Staff portal URL</span><input type="text" id="admin-origin" value="http://localhost:3001" /></label>
+    </div>
+    <div class="row-2">
+      <label><span>API port</span><input type="number" id="app-port" value="4000" /></label>
+      <label>
+        <span>Environment</span>
+        <select id="node-env">
+          <option value="production">Production</option>
+          <option value="staging">Staging</option>
+          <option value="development">Development</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted">Session cookies are marked Secure outside development, which the application requires to start.</p>
+  </section>
+
+  <section>
+    <h2>What to set up</h2>
+    <fieldset>
+      <label>
+        <input type="checkbox" id="seed-schema" checked />
+        <span>Create the database tables<small class="muted" style="font-weight:400">Turn off only if the schema already exists.</small></span>
+      </label>
+      <label>
+        <input type="checkbox" id="seed-reference" checked />
+        <span>Roles, permissions and the starting plans<small class="muted" style="font-weight:400">Needed for anyone to sign in.</small></span>
+      </label>
+      <label>
+        <input type="checkbox" id="seed-demo" />
+        <span>Example content<small class="muted" style="font-weight:400">Not built yet — the installer will say so rather than pretend.</small></span>
+      </label>
+    </fieldset>
+  </section>
+
+  <div id="install-error"></div>
+  <button type="submit" id="install">Install</button>
+</form>
+
+<div id="done" class="hidden">
+  <h1>WebEdge is installed</h1>
+  <div class="notice good" id="done-summary"></div>
+  <section>
+    <h2>Sign in</h2>
+    <p class="muted">Shown once. It is stored only as a hash — nothing here can recover it.</p>
+    <div class="secret"><strong id="done-email"></strong><br /><span class="mono" id="done-password"></span></div>
+  </section>
+  <section>
+    <h2>What happened</h2>
+    <ul class="steps" id="done-steps"></ul>
+  </section>
+  <section>
+    <h2>The installer is now closed</h2>
+    <p class="muted" id="done-lock"></p>
+  </section>
+</div>
+
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let token = '';
+
+  const api = async (path, options = {}) => {
+    const res = await fetch(path, {
+      ...options,
+      headers: { 'Content-Type': 'application/json', 'X-Setup-Token': token },
+    });
+    return { status: res.status, body: await res.json() };
+  };
+
+  const problem = (error) => {
+    const div = document.createElement('div');
+    div.className = 'notice bad';
+    div.setAttribute('role', 'alert');
+    const parts = [error.detail, error.reason, error.action].filter(Boolean);
+    div.innerHTML = parts.map((p, i) => `<${i === 0 ? 'strong' : 'span'}>${escapeHtml(p)}</${i === 0 ? 'strong' : 'span'}>`).join('<br />');
+    return div;
+  };
+
+  const escapeHtml = (value) =>
+    String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  const renderChecks = (checks) => {
+    const host = $('checks');
+    host.textContent = '';
+    for (const check of checks) {
+      const row = document.createElement('div');
+      row.className = 'check';
+      const glyph = check.status === 'pass' ? '✓' : check.status === 'warn' ? '!' : '✕';
+      row.innerHTML =
+        `<span class="badge ${check.status}" aria-hidden="true">${glyph}</span>` +
+        `<div class="check-body"><strong>${escapeHtml(check.title)}</strong>` +
+        `<p>${escapeHtml(check.detail)}</p>` +
+        (check.reason ? `<p>${escapeHtml(check.reason)}</p>` : '') +
+        (check.action ? `<p class="action">${escapeHtml(check.action)}</p>` : '') +
+        '</div>';
+      host.appendChild(row);
+    }
+    $('install').disabled = checks.some((c) => c.status === 'fail');
+  };
+
+  $('unlock').addEventListener('click', async () => {
+    token = $('token').value.trim();
+    $('gate-error').textContent = '';
+    const { status, body } = await api('/api/environment');
+    if (status !== 200) {
+      $('gate-error').appendChild(problem(body.error));
+      return;
+    }
+    $('gate').classList.add('hidden');
+    $('wizard').classList.remove('hidden');
+    renderChecks(body.checks);
+    $('admin-password').value = body.suggestedPassword;
+  });
+
+  $('test-db').addEventListener('click', async () => {
+    const target = $('db-result');
+    target.textContent = 'Connecting…';
+    const { body } = await api('/api/check-database', {
+      method: 'POST',
+      body: JSON.stringify({
+        host: $('db-host').value.trim(),
+        port: Number($('db-port').value),
+        database: $('db-name').value.trim(),
+        user: $('db-user').value.trim(),
+        password: $('db-password').value,
+      }),
+    });
+    target.textContent = '';
+    const check = body.check ?? body.error;
+    if (check.status === 'pass') {
+      const ok = document.createElement('div');
+      ok.className = 'notice good';
+      ok.textContent = check.detail;
+      target.appendChild(ok);
+    } else {
+      target.appendChild(problem(check));
+    }
+  });
+
+  $('wizard').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    $('install-error').textContent = '';
+    $('install').disabled = true;
+    $('install').textContent = 'Installing…';
+
+    const { status, body } = await api('/api/install', {
+      method: 'POST',
+      body: JSON.stringify({
+        database: {
+          host: $('db-host').value.trim(),
+          port: Number($('db-port').value),
+          database: $('db-name').value.trim(),
+          user: $('db-user').value.trim(),
+          password: $('db-password').value,
+        },
+        admin: {
+          email: $('admin-email').value.trim(),
+          fullName: $('admin-name').value.trim(),
+          password: $('admin-password').value,
+        },
+        application: {
+          clientOrigin: $('client-origin').value.trim(),
+          adminOrigin: $('admin-origin').value.trim(),
+          port: Number($('app-port').value),
+          nodeEnv: $('node-env').value,
+        },
+        seed: {
+          schema: $('seed-schema').checked,
+          referenceData: $('seed-reference').checked,
+          demoData: $('seed-demo').checked,
+        },
+      }),
+    });
+
+    $('install').disabled = false;
+    $('install').textContent = 'Install';
+
+    if (status !== 200) {
+      if (body.error) {
+        $('install-error').appendChild(problem(body.error));
+      } else if (body.steps) {
+        const failed = body.steps.find((s) => s.status === 'failed');
+        if (failed) $('install-error').appendChild(problem(failed));
+      }
+      $('install-error').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    $('wizard').classList.add('hidden');
+    $('done').classList.remove('hidden');
+    $('done-summary').textContent = 'Every step completed and the installer has locked itself.';
+    $('done-email').textContent = $('admin-email').value.trim();
+    $('done-password').textContent = body.adminPassword;
+    $('done-lock').textContent =
+      'The setup token has been deleted and this wizard will not open again. ' +
+      'Your .env file is kept — the application needs it to start. ' +
+      'Reinstalling deliberately means removing the install lock from a shell on this server.';
+
+    const list = $('done-steps');
+    for (const step of body.steps) {
+      const li = document.createElement('li');
+      li.innerHTML = `<strong>${escapeHtml(step.title)}</strong> — ${escapeHtml(step.detail)}` +
+        (step.reason ? `<br /><span class="muted">${escapeHtml(step.reason)}</span>` : '');
+      list.appendChild(li);
+    }
+    window.scrollTo({ top: 0 });
+  });
+})();
+</script>
+</body>
+</html>

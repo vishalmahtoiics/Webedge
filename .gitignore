@@ -43,3 +43,6 @@ frontend/public/monaco/
 # Mail server configs carry a database password.
 mail/postfix/*.cf
 mail/dovecot/*.conf.ext
+
+# Installer state: the lock and the one-time setup token.
+backend/.webedge/

@@ -23,6 +23,11 @@ DNS, files, databases and email through WebEdge and never encounter the underlyi
   account, Razorpay, or mail infrastructure.
 - **Stack:** NestJS + Prisma + PostgreSQL (backend), Next.js (frontend), Redis + BullMQ (queues).
 
+## Installing it
+
+`npm run install:wizard` in `backend/` runs the first-run setup wizard: environment checks, database
+connection, generated keys, migrations, seed, administrator, then it locks itself. See `INSTALL.md`.
+
 ## Running it
 
 ```bash
@@ -138,6 +143,20 @@ Changing these needs a reason, not a preference.
   `mail_domains.status = 'ACTIVE'` and on the row's own `isActive`, duplicating what the panel already
   refuses — because the panel is not what answers the connection on port 25. If a row ever reaches ACTIVE
   without proof of ownership, these queries are what still stands between it and a stranger's mail.
+- **The setup wizard authenticates by proof of filesystem access, and closes permanently.** There is no
+  administrator to authenticate as before installation, so the installer prints a one-time token and requires
+  it on every request; anyone who can read it already has the server. Afterwards the token is deleted and an
+  install lock is written, and every setup route answers 409. Re-opening it takes `rm` on the lock from a
+  shell — a button for that is a button that repoints the database and creates an administrator.
+- **The installer never installs dependencies over HTTP.** `npm ci` is a shell step before it. An endpoint
+  that installs packages is remote code execution with a friendly form in front of it.
+- **`.env` values are single-quoted, and anything unrepresentable is refused.** dotenv treats single quotes
+  as fully literal; inside double quotes it expands `\n` and `\r` and does *not* unescape `\"` or `\\`, so
+  the obvious escaping corrupts every password containing a quote or a backslash. A value needing both quote
+  characters cannot be stored at all and is rejected with an explanation rather than written wrong.
+- **The installer writes the lock last.** Configuration, migrations, seed, administrator, then lock. A
+  failure partway leaves a retryable system; writing the lock first would leave a half-installed one with the
+  wizard already closed.
 - **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
   is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
   takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
@@ -169,6 +188,10 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
+| `src/installer/env-file.spec.ts` | Every generated `.env` value round-trips through the real dotenv, and a newline cannot become a setting |
+| `src/installer/lock.spec.ts` | The wizard closes permanently after installing, and the setup token is compared in constant time |
+| `src/installer/environment.spec.ts` | Version comparison is numeric, so "at least 9" does not reject 10 |
+| `src/installer/secrets.spec.ts` | Generated keys match the config schema and generated passwords survive every quoting layer |
 | `src/mail/mail-routing.spec.ts` | An alias cycle is found before it is written, and a diamond is not mistaken for one |
 | `test/mail-lookup-maps.spec.ts` | A real `postmap -q` refuses an unverified domain, a suspended one, and a switched-off mailbox or alias |
 | `test/mail-tenancy.spec.ts` | A mailbox is unreachable except through a domain the caller owns, an unverified domain carries nothing, and the plan allowance is counted across every domain |
