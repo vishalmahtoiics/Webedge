@@ -148,6 +148,16 @@ Changing these needs a reason, not a preference.
   it on every request; anyone who can read it already has the server. Afterwards the token is deleted and an
   install lock is written, and every setup route answers 409. Re-opening it takes `rm` on the lock from a
   shell — a button for that is a button that repoints the database and creates an administrator.
+- **No dependency may require a compiler.** Every package must ship a prebuilt binary or be pure
+  JavaScript, and the binary must load on Enterprise Linux 8 (glibc 2.28), which is what most managed hosting
+  runs. `argon2` failed this: its prebuild needs GLIBC_2.34, so it fell back to compiling, and node-gyp's
+  Python needs 3.8+ where EL8 has 3.6.8 — an install that dies with a `SyntaxError` in a Python file and
+  names none of the three causes. `@node-rs/argon2` needs GLIBC_2.14 and never invokes a compiler. If
+  `npm ci` ever starts running `node-gyp`, that is a regression, not a toolchain to install.
+- **One module owns password hashing.** `common/password-hashing.ts`. Four files used to import an argon2
+  library directly and restate the cost parameters, which is why replacing it was a four-file change.
+  Swapping a hashing library is only safe if hashes already in the database still verify and Dovecot still
+  reads the mailbox ones — both are pinned by tests against hashes written by other implementations.
 - **The installer never installs dependencies over HTTP.** `npm ci` is a shell step before it. An endpoint
   that installs packages is remote code execution with a friendly form in front of it.
 - **`.env` values are single-quoted, and anything unrepresentable is refused.** dotenv treats single quotes
@@ -188,6 +198,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
+| `src/common/password-hashing.spec.ts` | Hashes written by other argon2 implementations still verify, so the library can be replaced without locking anyone out |
 | `src/installer/env-file.spec.ts` | Every generated `.env` value round-trips through the real dotenv, and a newline cannot become a setting |
 | `src/installer/lock.spec.ts` | The wizard closes permanently after installing, and the setup token is compared in constant time |
 | `src/installer/environment.spec.ts` | Version comparison is numeric, so "at least 9" does not reject 10 |

@@ -1,4 +1,4 @@
-import argon2 from 'argon2';
+import { MAILBOX_COST, hashPassword, needsRehash as costIsBelow, verifyPassword } from '../common/password-hashing';
 
 /**
  * Mailbox passwords, in the form Dovecot verifies.
@@ -6,6 +6,8 @@ import argon2 from 'argon2';
  * WebEdge hashes with argon2id in this process and stores the result with
  * Dovecot's scheme prefix. Dovecot verifies it directly against its own
  * `{ARGON2ID}` scheme — checked against a real `doveadm pw -t`, not assumed.
+ * The hashing itself lives in `common/password-hashing.ts`, which owns the
+ * library choice; this file owns the Dovecot format around it.
  *
  * Two things this buys. A plaintext password never crosses a process boundary,
  * so it cannot appear in a process listing, a subprocess argument or a shell
@@ -26,12 +28,7 @@ export const DOVECOT_SCHEME = 'ARGON2ID';
  * every IMAP connection, so this is the trade-off worth revisiting under load —
  * but the wrong direction to err in is the cheap one.
  */
-export const ARGON2_OPTIONS = {
-  type: argon2.argon2id,
-  memoryCost: 65_536,
-  timeCost: 3,
-  parallelism: 1,
-} as const;
+export const ARGON2_OPTIONS = MAILBOX_COST;
 
 /** `{ARGON2ID}$argon2id$v=19$m=65536,t=3,p=1$<salt>$<hash>` */
 export async function hashMailboxPassword(password: string): Promise<string> {
@@ -42,7 +39,7 @@ export async function hashMailboxPassword(password: string): Promise<string> {
     throw new Error('A mailbox password must be at least 12 characters.');
   }
 
-  const hash = await argon2.hash(password, ARGON2_OPTIONS);
+  const hash = await hashPassword(password, MAILBOX_COST);
   return `{${DOVECOT_SCHEME}}${hash}`;
 }
 
@@ -56,14 +53,10 @@ export async function verifyMailboxPassword(stored: string, password: string): P
   const hash = stripScheme(stored);
   if (!hash) return false;
 
-  try {
-    return await argon2.verify(hash, password);
-  } catch {
-    // A malformed stored value is a failed verification, not an exception to
-    // propagate: the caller's question is "is this password right", and the
-    // answer for an unreadable hash is no.
-    return false;
-  }
+  // A malformed stored value is a failed verification, not an exception to
+  // propagate: the caller's question is "is this password right", and the
+  // answer for an unreadable hash is no.
+  return verifyPassword(hash, password);
 }
 
 /** Removes the `{SCHEME}` prefix, or returns null if it is not one we wrote. */
@@ -85,12 +78,5 @@ export function needsRehash(stored: string): boolean {
   const hash = stripScheme(stored);
   if (!hash) return true;
 
-  const params = /^\$argon2id\$v=19\$m=(\d+),t=(\d+),p=(\d+)\$/.exec(hash);
-  if (!params) return true;
-
-  return (
-    Number(params[1]) < ARGON2_OPTIONS.memoryCost ||
-    Number(params[2]) < ARGON2_OPTIONS.timeCost ||
-    Number(params[3]) !== ARGON2_OPTIONS.parallelism
-  );
+  return costIsBelow(hash, MAILBOX_COST);
 }

@@ -3,12 +3,12 @@ import { chmod, copyFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { PrismaClient } from '@prisma/client';
-import argon2 from 'argon2';
 import { buildDatabaseUrl, redactEnv, renderEnvFile, type EnvSection } from './env-file';
 import { InstallState, type InstallRecord } from './lock';
 import { pathExists } from './environment';
 import { checkDatabase, type CheckResult, type DatabaseTarget } from './preflight';
 import { generateEncryptionKey, generateSigningSecret } from './secrets';
+import { ACCOUNT_COST, hashPassword } from '../common/password-hashing';
 
 const run = promisify(execFile);
 
@@ -373,12 +373,7 @@ export class Installer {
       }
 
       const email = request.admin.email.toLowerCase().trim();
-      const passwordHash = await argon2.hash(request.admin.password, {
-        type: argon2.argon2id,
-        memoryCost: 19_456,
-        timeCost: 2,
-        parallelism: 1,
-      });
+      const passwordHash = await hashPassword(request.admin.password, ACCOUNT_COST);
 
       await prisma.adminUser.upsert({
         where: { email },

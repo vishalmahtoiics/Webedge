@@ -1,22 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { AccountStatus, Realm } from '@prisma/client';
-import * as argon2 from 'argon2';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { TokenService, type IssuedTokens } from './token.service';
 import { AppError, unauthenticated } from '../common/errors';
-
-/**
- * OWASP-recommended Argon2id parameters. Benchmark on production hardware before
- * launch and raise until a hash takes roughly 0.5s there — these are a floor,
- * not a target.
- */
-const ARGON2_OPTIONS: argon2.Options = {
-  type: argon2.argon2id,
-  memoryCost: 19456, // 19 MiB
-  timeCost: 2,
-  parallelism: 1,
-};
+import { ACCOUNT_COST, hashPassword, verifyPassword } from '../common/password-hashing';
 
 const MAX_FAILED_LOGINS = 5;
 const LOCKOUT_MINUTES = 15;
@@ -35,19 +23,12 @@ export class AuthService {
   ) {}
 
   static hashPassword(plain: string): Promise<string> {
-    return argon2.hash(plain, ARGON2_OPTIONS);
+    return hashPassword(plain, ACCOUNT_COST);
   }
 
-  /**
-   * Argon2 verification throws on a malformed hash rather than returning false,
-   * which would otherwise surface as a 500 instead of a failed login.
-   */
+  /** Malformed hashes verify as false rather than throwing — see the adapter. */
   private static async verifyPassword(hash: string, plain: string): Promise<boolean> {
-    try {
-      return await argon2.verify(hash, plain);
-    } catch {
-      return false;
-    }
+    return verifyPassword(hash, plain);
   }
 
   /**
@@ -67,7 +48,7 @@ export class AuthService {
     if (!user) {
       // Hash anyway, so a missing account does not answer faster than a wrong
       // password and leak account existence through timing.
-      await argon2.hash(password, ARGON2_OPTIONS);
+      await hashPassword(password, ACCOUNT_COST);
       AuthService.failLogin();
     }
 
@@ -114,7 +95,7 @@ export class AuthService {
     });
 
     if (!user) {
-      await argon2.hash(password, ARGON2_OPTIONS);
+      await hashPassword(password, ACCOUNT_COST);
       AuthService.failLogin();
     }
 

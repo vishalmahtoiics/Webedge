@@ -8,18 +8,13 @@
  *   node --experimental-strip-types prisma/seed.ts
  */
 import { PrismaClient, Realm } from '@prisma/client';
-import * as argon2 from 'argon2';
 import { randomBytes } from 'node:crypto';
 import { PERMISSIONS, DEFAULT_ROLE_PERMISSIONS } from '../src/rbac/permissions.catalog.ts';
+// Explicit .ts extension: this file runs under --experimental-strip-types,
+// which resolves as ESM and does not guess extensions.
+import { ACCOUNT_COST, hashPassword } from '../src/common/password-hashing.ts';
 
 const prisma = new PrismaClient();
-
-const ARGON2_OPTIONS = {
-  type: argon2.argon2id,
-  memoryCost: 19456,
-  timeCost: 2,
-  parallelism: 1,
-} as const;
 
 async function seedPermissions(): Promise<void> {
   for (const definition of PERMISSIONS) {
@@ -110,7 +105,7 @@ async function main(): Promise<void> {
       data: {
         email,
         fullName: process.env.SEED_ADMIN_NAME ?? 'WebEdge Super Admin',
-        passwordHash: await argon2.hash(password, ARGON2_OPTIONS),
+        passwordHash: await hashPassword(password, ACCOUNT_COST),
         roleId: superAdminRoleId,
         status: 'ACTIVE',
       },

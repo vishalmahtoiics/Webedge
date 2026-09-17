@@ -14,6 +14,10 @@ plans, creates your administrator, then locks itself.
 ## What it needs first
 
 - **Node 22 or newer.** The installer checks and refuses to continue below it.
+- **No compiler, no Python, no build toolchain.** Every dependency ships a
+  prebuilt binary or is pure JavaScript. `npm ci` on a machine with nothing but
+  Node installed is expected to work, and if it ever starts invoking `node-gyp`
+  that is a regression worth fixing rather than a toolchain to install.
 - **PostgreSQL 14 or newer**, with a database and a user already created. The
   installer does not create databases — doing so needs credentials with rights
   over the whole server, which is not something a setup wizard should hold.
@@ -81,6 +85,22 @@ until every step has succeeded.
 An existing `.env` is copied to `.env.replaced-<timestamp>` before a new one is
 written — running the installer on a configured machine does not destroy the
 only copy of your configuration.
+
+## If `npm ci` fails building a native module
+
+It should not, and the fix is in the dependency rather than on your server.
+
+This happened once with the `argon2` package: its prebuilt Linux binary requires
+GLIBC_2.34, and Enterprise Linux 8 — which most managed and shared hosting still
+runs — has glibc 2.28. The prebuild fails to load, npm falls back to compiling
+from source, and `node-gyp`'s bundled Python code needs 3.8+ while EL8 ships
+3.6.8. The install dies with a `SyntaxError` inside a Python file, which points
+at none of the three real causes.
+
+It was replaced with `@node-rs/argon2`, whose binary needs only GLIBC_2.14.
+If another dependency does the same thing, the answer is the same: find one that
+ships a binary your platform can actually load. Installing a compiler on a
+production host to build a cryptography library is the worse trade.
 
 ## What the installer does not do
 
