@@ -7,6 +7,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { CustomersModule } from './customers/customers.module';
 import { DnsModule } from './dns/dns.module';
 import { FilesModule } from './files/files.module';
+import { ChecksModule } from './checks/checks.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { AppExceptionFilter } from './common/filters/app-exception.filter';
@@ -19,6 +20,7 @@ import { AppExceptionFilter } from './common/filters/app-exception.filter';
     CustomersModule,
     DnsModule,
     FilesModule,
+    ChecksModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
   ],
   providers: [
