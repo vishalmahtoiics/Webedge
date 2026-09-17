@@ -89,6 +89,11 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `test/activity-log-durability.spec.ts` | The trail survives account deletion, redacts secrets, and cannot be rewritten |
 | `src/providers/credential-cipher.service.spec.ts` | Tampered ciphertext, tags and IVs are all rejected |
 | `src/rbac/permissions.catalog.spec.ts` | No role is composed from another realm's keys |
+| `test/sftp-file-transport.spec.ts` | A symlink inside the website cannot be used to read, write or delete outside it |
+
+The SFTP suite needs a real server, not a mock: its central claim is that a
+symlink resolves somewhere its textual path does not reveal, which only a real
+filesystem can show. Start it with `sudo backend/test/sftp-fixture.sh`.
 
 When you fix a bug, prefer a test that catches the whole class over one that catches the instance. The
 `SUPPORT_STAFF` cross-realm bug is the example: the fix was a rule, not a corrected list.
