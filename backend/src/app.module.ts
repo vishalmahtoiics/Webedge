@@ -11,6 +11,7 @@ import { ChecksModule } from './checks/checks.module';
 import { BillingModule } from './billing/billing.module';
 import { ActivityModule } from './activity/activity.module';
 import { PlansModule } from './plans/plans.module';
+import { MailModule } from './mail/mail.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { PermissionsGuard } from './common/guards/permissions.guard';
 import { AppExceptionFilter } from './common/filters/app-exception.filter';
@@ -27,6 +28,7 @@ import { AppExceptionFilter } from './common/filters/app-exception.filter';
     BillingModule,
     ActivityModule,
     PlansModule,
+    MailModule,
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
   ],
   providers: [

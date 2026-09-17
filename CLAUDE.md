@@ -120,6 +120,16 @@ Changing these needs a reason, not a preference.
 - **An alias loop is refused before it is written, not detected at delivery.** Postfix catches the cycle after
   accepting the message: the sender believes it was sent, nobody receives it, and the evidence is in a log
   nobody reads. A diamond — two branches reaching the same mailbox — is not a loop and is allowed.
+- **A mailbox has no tenant of its own.** `Mailbox` and `MailAlias` carry no `customerId` — their tenant is
+  the domain's — so every route is nested under a domain id and every method resolves that domain through
+  `TenantScope` first. Lookups are on `(id, domainId)`, never on the id alone, so there is no window in which
+  the wrong row has been read.
+- **Plan limits are enforced at creation, and null is the only unlimited.** A plan with no stated limit does
+  not fall back to a default number: "unlimited" and "one hundred" are different promises. A customer with no
+  active subscription has an allowance of zero, not an unbounded one — treating an absent plan as unlimited
+  is how a cancelled account keeps consuming. The count and the write are not in one transaction, so
+  simultaneous requests can exceed a limit by the number of requests made at once; bounded, visible on the
+  next check, and worth a locked row when a creation path matters more than a mailbox.
 - **A mail domain must prove ownership before mail is accepted for it.** Otherwise one customer adds
   another's domain and starts receiving their mail. `postmaster`, `abuse` and the addresses a certificate
   authority accepts as proof of control are reserved and never handed to a customer.
@@ -155,6 +165,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
 | `src/mail/mail-routing.spec.ts` | An alias cycle is found before it is written, and a diamond is not mistaken for one |
+| `test/mail-tenancy.spec.ts` | A mailbox is unreachable except through a domain the caller owns, an unverified domain carries nothing, and the plan allowance is counted across every domain |
 | `test/subscription-lifecycle.spec.ts` | Renewing keeps the anniversary, cancelling keeps the paid period, a plan change credits only the unused part, and the catalogue never names the upstream product |
 
 Several suites run against real services rather than mocks, because they assert
@@ -194,7 +205,7 @@ observed behaviour:
 2. Provider integration — multiple Hostinger accounts, encrypted credentials, resource mapping
 3. Hosting panel — dashboard, domains, websites, storage, DNS, file manager, editor
 4. Advanced hosting — databases, SSL, backups, WordPress
-5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail ← *foundation built; needs servers*
+5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail ← *panel and rules built; needs servers*
 6. Business — plans, orders, Razorpay, invoices, renewals ← *current; everything but Razorpay*
 7. Scale — multiple providers, queues, monitoring, migration tools
 

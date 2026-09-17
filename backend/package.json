@@ -6,6 +6,8 @@
   "scripts": {
     "build": "nest build",
     "start": "nest start",
+    "//start:dev": "dist and tsconfig.tsbuildinfo are cleared first. Without it, an incremental build that skipped an emit leaves dist referencing a module it never wrote, and the watcher starts the stale dist/main before finishing — which surfaces as MODULE_NOT_FOUND for a file that is plainly there in src.",
+    "prestart:dev": "rm -rf dist tsconfig.tsbuildinfo",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main.js",
     "lint": "eslint \"src/**/*.ts\"",

@@ -17,7 +17,13 @@ import { isCustomer, type Principal } from './principal';
  */
 
 /** The tenant-owned models reachable through this helper. */
-type ScopedModel = 'website' | 'domain' | 'subscription' | 'notification' | 'invoice';
+type ScopedModel =
+  | 'website'
+  | 'domain'
+  | 'subscription'
+  | 'notification'
+  | 'invoice'
+  | 'mailDomain';
 
 @Injectable()
 export class TenantScope {
