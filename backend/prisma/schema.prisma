@@ -1,0 +1,491 @@
+// WebEdge Solution — core data model
+//
+// Two identity realms, deliberately separate tables rather than one `users` table
+// with a discriminator (blueprint §22: "Separate admin authentication and permissions
+// from customer authentication"). A single table makes it one forgotten WHERE clause
+// for a customer session to authorize a staff route; separate tables make that
+// mistake impossible to express.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────── Enums ───────────────────────────────
+
+enum Realm {
+  ADMIN
+  CUSTOMER
+}
+
+enum AdminRoleName {
+  SUPER_ADMIN
+  ADMIN
+  SUPPORT_STAFF
+}
+
+enum AccountStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+  TERMINATED
+}
+
+enum ProviderKind {
+  HOSTINGER
+}
+
+enum ProviderAccountStatus {
+  ACTIVE
+  DISABLED
+  DEGRADED
+}
+
+enum WebsiteStatus {
+  PROVISIONING
+  ACTIVE
+  SUSPENDED
+  FAILED
+  ORPHANED
+}
+
+enum DomainStatus {
+  ACTIVE
+  EXPIRING_SOON
+  EXPIRED
+  PENDING_TRANSFER
+  PENDING_VERIFICATION
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingCycle {
+  MONTHLY
+  QUARTERLY
+  YEARLY
+  BIENNIAL
+  TRIENNIAL
+}
+
+/// Controls whether an activity entry is shown to the customer in their own
+/// activity feed. Internal staff actions stay INTERNAL.
+enum LogVisibility {
+  CUSTOMER
+  INTERNAL
+}
+
+// ─────────────────────────── Identity & access ───────────────────────────
+
+/// A staff login. Invite-only; 2FA is mandatory for SUPER_ADMIN (§22).
+model AdminUser {
+  id           String        @id @default(uuid()) @db.Uuid
+  email        String        @unique
+  passwordHash String
+  fullName     String
+  status       AccountStatus @default(ACTIVE)
+
+  roleId String @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  totpSecret         String?
+  totpEnabledAt      DateTime?
+  recoveryCodeHashes String[]  @default([])
+
+  lastLoginAt      DateTime?
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  activityLogs  ActivityLog[]  @relation("ActorAdmin")
+
+  @@index([status])
+  @@map("admin_users")
+}
+
+/// The tenant. Every customer-owned resource hangs off this, and every customer
+/// query is scoped by customerId.
+model Customer {
+  id          String        @id @default(uuid()) @db.Uuid
+  companyName String?
+  fullName    String
+  email       String        @unique
+  phone       String?
+  status      AccountStatus @default(PENDING_VERIFICATION)
+
+  /// Place of supply for GST; the customer's own GSTIN when they have one.
+  billingState String?
+  gstin        String?
+
+  internalNotes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users         CustomerUser[]
+  websites      Website[]
+  domains       Domain[]
+  subscriptions Subscription[]
+  activityLogs  ActivityLog[]
+  notifications Notification[]
+
+  @@index([status])
+  @@map("customers")
+}
+
+/// A login belonging to a Customer. Modelled as its own table from the start so
+/// customer team members can be added later without re-architecting ownership.
+model CustomerUser {
+  id           String        @id @default(uuid()) @db.Uuid
+  customerId   String        @db.Uuid
+  customer     Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  email        String        @unique
+  passwordHash String
+  fullName     String
+  status       AccountStatus @default(PENDING_VERIFICATION)
+
+  roleId String @db.Uuid
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Restrict)
+
+  emailVerifiedAt DateTime?
+  totpSecret      String?
+  totpEnabledAt   DateTime?
+
+  lastLoginAt      DateTime?
+  failedLoginCount Int       @default(0)
+  lockedUntil      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  activityLogs  ActivityLog[]  @relation("ActorCustomer")
+
+  @@index([customerId])
+  @@map("customer_users")
+}
+
+/// Roles are realm-scoped: a CUSTOMER role can never be attached to an AdminUser
+/// in a way that grants staff permissions, because the permission keys themselves
+/// are realm-scoped too.
+model Role {
+  id          String  @id @default(uuid()) @db.Uuid
+  realm       Realm
+  name        String
+  description String?
+  /// System roles are seeded and cannot be deleted through the admin UI.
+  isSystem    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  permissions   RolePermission[]
+  adminUsers    AdminUser[]
+  customerUsers CustomerUser[]
+
+  @@unique([realm, name])
+  @@map("roles")
+}
+
+/// Seeded idempotently from a fixed catalog. Custom staff roles are composed
+/// from these keys rather than from free text.
+model Permission {
+  id          String @id @default(uuid()) @db.Uuid
+  /// e.g. "files.delete", "admin.providers.credentials"
+  key         String @unique
+  module      String
+  realm       Realm
+  description String
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @db.Uuid
+  permissionId String     @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Refresh tokens are stored hashed. The raw token is returned to the client once
+/// and never persisted, so a database read cannot mint a session.
+model RefreshToken {
+  id        String @id @default(uuid()) @db.Uuid
+  tokenHash String @unique
+  realm     Realm
+
+  adminUserId    String?       @db.Uuid
+  adminUser      AdminUser?    @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+  customerUserId String?       @db.Uuid
+  customerUser   CustomerUser? @relation(fields: [customerUserId], references: [id], onDelete: Cascade)
+
+  /// Set when this token is rotated, pointing at its replacement. Reuse of a
+  /// rotated token indicates theft and revokes the whole family.
+  replacedById String?   @db.Uuid
+  revokedAt    DateTime?
+
+  userAgent String?
+  ipAddress String?
+
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([adminUserId])
+  @@index([customerUserId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ───────────────────────────── Provider layer ─────────────────────────────
+
+/// An upstream provider account. Credentials live in ApiCredential so they can be
+/// rotated with overlap without touching this row.
+model HostingAccount {
+  id          String                @id @default(uuid()) @db.Uuid
+  provider    ProviderKind          @default(HOSTINGER)
+  accountName String
+  status      ProviderAccountStatus @default(ACTIVE)
+
+  /// Free-form provider product family, e.g. "agency-hosting" or "shared".
+  /// Drives which capability set applies (blueprint §23).
+  productFamily String?
+
+  websiteSlotsTotal Int?
+  websiteSlotsUsed  Int       @default(0)
+  lastSyncedAt      DateTime?
+  lastErrorAt       DateTime?
+  lastError         String?
+  notes             String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  credentials ApiCredential[]
+  websites    Website[]
+
+  @@index([status])
+  @@map("hosting_accounts")
+}
+
+/// Encrypted provider credentials. `keyVersion` names the encryption key used, so
+/// keys can be rotated without decrypting everything at once. The ciphertext never
+/// leaves the server and is never serialized into an API response.
+model ApiCredential {
+  id               String         @id @default(uuid()) @db.Uuid
+  hostingAccountId String         @db.Uuid
+  hostingAccount   HostingAccount @relation(fields: [hostingAccountId], references: [id], onDelete: Cascade)
+
+  label          String
+  ciphertext     String
+  iv             String
+  authTag        String
+  keyVersion     String
+  /// Last four characters of the plaintext token, for display only.
+  lastFour       String?
+  expiresAt      DateTime?
+  lastVerifiedAt DateTime?
+  revokedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([hostingAccountId])
+  @@map("api_credentials")
+}
+
+// ─────────────────────────── Customer resources ───────────────────────────
+
+model Website {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  hostingAccountId String?         @db.Uuid
+  hostingAccount   HostingAccount? @relation(fields: [hostingAccountId], references: [id], onDelete: SetNull)
+
+  domain String        @unique
+  status WebsiteStatus @default(PROVISIONING)
+
+  /// The provider's own identifier for this resource. Internal only — never
+  /// serialized to a customer response (blueprint §27).
+  providerResourceId String?
+  /// Provider hosting-account username, where the product family scopes by account.
+  providerUsername   String?
+  documentRoot       String?
+  phpVersion         String?
+
+  diskUsedBytes BigInt?
+  lastSyncedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([hostingAccountId])
+  @@index([status])
+  @@map("websites")
+}
+
+model Domain {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  name   String       @unique
+  status DomainStatus @default(ACTIVE)
+
+  registrar      String?
+  expiresAt      DateTime?
+  autoRenew      Boolean   @default(true)
+  registrarLock  Boolean   @default(true)
+  privacyEnabled Boolean   @default(false)
+  nameservers    String[]  @default([])
+
+  /// True when WebEdge manages this zone and can write records.
+  dnsManaged   Boolean   @default(false)
+  lastSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([expiresAt])
+  @@map("domains")
+}
+
+// ───────────────────────────── Plans & billing ─────────────────────────────
+
+model HostingPlan {
+  id          String  @id @default(uuid()) @db.Uuid
+  name        String
+  slug        String  @unique
+  description String?
+  isPublic    Boolean @default(true)
+  isActive    Boolean @default(true)
+
+  /// Limits. Null means unlimited.
+  maxWebsites    Int?
+  maxDomains     Int?
+  maxDatabases   Int?
+  maxMailboxes   Int?
+  storageGb      Int?
+  mailboxQuotaGb Int?
+
+  /// Price in paise, to avoid floating-point money.
+  priceInPaise Int
+  billingCycle BillingCycle @default(YEARLY)
+
+  /// The provider product this plan is fulfilled by. Internal only.
+  providerProduct String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subscriptions Subscription[]
+
+  @@index([isPublic, isActive])
+  @@map("hosting_plans")
+}
+
+model Subscription {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  planId String      @db.Uuid
+  plan   HostingPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  status      SubscriptionStatus @default(ACTIVE)
+  startsAt    DateTime           @default(now())
+  renewsAt    DateTime
+  cancelledAt DateTime?
+  autoRenew   Boolean            @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([renewsAt])
+  @@map("subscriptions")
+}
+
+// ────────────────────────── Audit & notifications ──────────────────────────
+
+/// Append-only. The application database role is granted INSERT and SELECT only;
+/// UPDATE and DELETE are revoked in a migration, so a compromised API cannot
+/// rewrite its own trail.
+model ActivityLog {
+  id String @id @default(uuid()) @db.Uuid
+
+  /// Who acted. Exactly one of these is set for a user action; both null for
+  /// system actions such as a sync worker.
+  adminUserId    String?       @db.Uuid
+  adminUser      AdminUser?    @relation("ActorAdmin", fields: [adminUserId], references: [id], onDelete: SetNull)
+  customerUserId String?       @db.Uuid
+  customerUser   CustomerUser? @relation("ActorCustomer", fields: [customerUserId], references: [id], onDelete: SetNull)
+
+  /// Set when a staff member acted while impersonating a customer.
+  impersonatorAdminId String? @db.Uuid
+
+  /// Which tenant the action affected.
+  customerId String?   @db.Uuid
+  customer   Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  /// e.g. "dns.record.updated", "files.deleted"
+  action       String
+  resourceType String?
+  resourceId   String?
+
+  /// Redacted before-and-after values. Secrets are replaced with a marker by the
+  /// logging service, never stored raw.
+  oldValue Json?
+  newValue Json?
+
+  visibility LogVisibility @default(INTERNAL)
+
+  ipAddress String?
+  userAgent String?
+  requestId String?
+
+  createdAt DateTime @default(now())
+
+  @@index([customerId, createdAt])
+  @@index([action])
+  @@index([createdAt])
+  @@map("activity_logs")
+}
+
+model Notification {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  /// success | info | warning | security
+  category  String
+  title     String
+  body      String
+  actionUrl String?
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([customerId, readAt])
+  @@map("notifications")
+}

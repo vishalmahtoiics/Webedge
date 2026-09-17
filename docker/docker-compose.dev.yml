@@ -1,0 +1,44 @@
+# Development stack. Production compose is added in Phase 7 alongside the
+# hardened nginx config and TLS.
+#
+#   docker compose -f docker/docker-compose.dev.yml up -d
+#
+# Postgres and Redis are bound to 127.0.0.1 so a developer laptop on a café
+# network is not serving an unauthenticated database to the room.
+
+name: webedge-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: webedge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpass}
+      POSTGRES_DB: webedge
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webedge -d webedge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # No persistence needed in development: Redis holds sessions, cache and the
+    # job queue, all of which are safe to lose locally.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
