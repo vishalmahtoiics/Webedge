@@ -41,6 +41,26 @@ export class AppExceptionFilter implements ExceptionFilter {
         return;
       }
 
+      // Rate limiting is handled before anything else, because the framework's
+      // own message is "ThrottlerException: Too Many Requests" — an internal
+      // class name, which must never reach a customer.
+      if (status === HttpStatus.TOO_MANY_REQUESTS) {
+        const retryAfter = Number(res.getHeader('Retry-After'));
+        const minutes = Number.isFinite(retryAfter) ? Math.ceil(retryAfter / 60) : undefined;
+
+        res.status(status).json({
+          error: {
+            code: 'RATE_LIMITED',
+            message: minutes
+              ? `Too many attempts. Try again in ${minutes} minute${minutes === 1 ? '' : 's'}.`
+              : 'Too many attempts. Try again shortly.',
+            requestId,
+            ...(Number.isFinite(retryAfter) ? { details: { retryAfterSeconds: retryAfter } } : {}),
+          },
+        });
+        return;
+      }
+
       // Validation failures from class-validator arrive as a message array.
       const messages =
         typeof body === 'object' && body !== null && 'message' in body
@@ -49,7 +69,7 @@ export class AppExceptionFilter implements ExceptionFilter {
 
       res.status(status).json({
         error: {
-          code: status === HttpStatus.TOO_MANY_REQUESTS ? 'RATE_LIMITED' : 'INVALID_REQUEST',
+          code: 'INVALID_REQUEST',
           message: Array.isArray(messages) ? messages.join(' ') : messages,
           requestId,
           ...(Array.isArray(messages) ? { details: { fields: messages } } : {}),
