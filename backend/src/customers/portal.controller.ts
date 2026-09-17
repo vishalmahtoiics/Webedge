@@ -50,6 +50,29 @@ export class PortalController {
     return this.scope.findOwned(principal, 'website', id, 'website');
   }
 
+  /**
+   * The plan the customer is on, with its renewal date.
+   *
+   * Read through TenantScope like everything else here, then re-read by id to
+   * pull the plan's name — `findOwned` deliberately does not fetch relations.
+   * Returns null rather than 404 when there is no subscription: having no plan
+   * is a state, not a missing resource.
+   */
+  @Get('subscription')
+  @RequirePermissions('billing.view')
+  async getSubscription(@CurrentUser() principal: Principal) {
+    const { items } = await this.scope.listOwned<{ id: string; status: string }>(
+      principal,
+      'subscription',
+      { take: 1, where: { status: 'ACTIVE' }, orderBy: { createdAt: 'desc' } },
+    );
+    const current = items[0];
+    if (!current) return { subscription: null };
+
+    const subscription = await this.dashboard.subscriptionSummary(current.id);
+    return { subscription };
+  }
+
   @Get('domains')
   @RequirePermissions('domains.view')
   listDomains(@CurrentUser() principal: Principal, @Query() query: PageQueryDto) {

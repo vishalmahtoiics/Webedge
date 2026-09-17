@@ -1,6 +1,7 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { Realm } from '@prisma/client';
 import { CustomersService } from './customers.service';
+import { SubscriptionsService } from '../plans/subscriptions.service';
 import {
   AssignPlanDto, CreateCustomerDto, ListCustomersQueryDto, SetCustomerStatusDto,
 } from './dto/customer.dto';
@@ -10,7 +11,10 @@ import type { Principal } from '../common/principal';
 @Controller('admin/customers')
 @RequireRealm(Realm.ADMIN)
 export class CustomersController {
-  constructor(private readonly customers: CustomersService) {}
+  constructor(
+    private readonly customers: CustomersService,
+    private readonly subscriptions: SubscriptionsService,
+  ) {}
 
   @Get()
   @RequirePermissions('admin.customers')
@@ -43,6 +47,8 @@ export class CustomersController {
     await this.customers.setStatus(principal, id, dto.status, dto.reason);
   }
 
+  // Kept at this address because it is where staff assign a plan from, but the
+  // lifecycle and its date arithmetic belong to SubscriptionsService.
   @Post(':id/plan')
   @RequirePermissions('admin.hosting_services')
   assignPlan(
@@ -50,6 +56,6 @@ export class CustomersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AssignPlanDto,
   ) {
-    return this.customers.assignPlan(principal, id, dto.planId);
+    return this.subscriptions.subscribe(principal, id, dto.planId);
   }
 }

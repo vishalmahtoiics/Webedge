@@ -32,6 +32,42 @@ const unavailable = (reason: string): MetricValue => ({ available: false, reason
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * One subscription, for the billing page.
+   *
+   * Ownership is established by the caller through TenantScope before this runs,
+   * which is why it takes a bare id — it exists to join the plan's name, and the
+   * fields it selects are the ones a customer may see. `providerProduct` is not
+   * among them: naming the upstream product names the provider.
+   */
+  async subscriptionSummary(subscriptionId: string) {
+    const subscription = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      select: {
+        id: true,
+        status: true,
+        startsAt: true,
+        renewsAt: true,
+        autoRenew: true,
+        cancelledAt: true,
+        plan: {
+          select: {
+            name: true,
+            description: true,
+            priceInPaise: true,
+            billingCycle: true,
+            maxWebsites: true,
+            maxDomains: true,
+            maxMailboxes: true,
+            storageGb: true,
+          },
+        },
+      },
+    });
+
+    return subscription;
+  }
+
   async build(principal: CustomerPrincipal) {
     const { customerId } = principal;
 

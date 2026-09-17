@@ -240,50 +240,10 @@ export class CustomersService {
   }
 
   /** Assigns a plan. Existing active subscriptions are cancelled, not stacked. */
-  async assignPlan(
-    principal: Principal,
-    customerId: string,
-    planId: string,
-  ): Promise<{ subscriptionId: string }> {
-    const [customer, plan] = await Promise.all([
-      this.prisma.customer.findUnique({ where: { id: customerId }, select: { id: true } }),
-      this.prisma.hostingPlan.findUnique({ where: { id: planId } }),
-    ]);
-    if (!customer) throw notFound('customer');
-    if (!plan) throw notFound('plan');
-
-    const renewsAt = new Date();
-    const months =
-      plan.billingCycle === 'MONTHLY'
-        ? 1
-        : plan.billingCycle === 'QUARTERLY'
-          ? 3
-          : plan.billingCycle === 'YEARLY'
-            ? 12
-            : plan.billingCycle === 'BIENNIAL'
-              ? 24
-              : 36;
-    renewsAt.setMonth(renewsAt.getMonth() + months);
-
-    const subscription = await this.prisma.$transaction(async (tx) => {
-      await tx.subscription.updateMany({
-        where: { customerId, status: 'ACTIVE' },
-        data: { status: 'CANCELLED', cancelledAt: new Date() },
-      });
-
-      return tx.subscription.create({
-        data: { customerId, planId, status: 'ACTIVE', renewsAt },
-      });
-    });
-
-    await this.activity.record(principal, {
-      action: 'admin.customer.plan_assigned',
-      customerId,
-      resourceType: 'subscription',
-      resourceId: subscription.id,
-      newValue: { plan: plan.name, renewsAt },
-    });
-
-    return { subscriptionId: subscription.id };
-  }
+  /**
+   * Plan assignment lives in SubscriptionsService, which owns the lifecycle and
+   * the date arithmetic. It was duplicated here with `Date.setMonth`, which
+   * overflows at month ends — a plan assigned on the 31st renewed on the 1st of
+   * the month after next, and the anniversary drifted forward every cycle.
+   */
 }

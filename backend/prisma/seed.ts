@@ -124,7 +124,81 @@ async function main(): Promise<void> {
     }
   }
 
+  await seedPlans();
+
   console.log('\nSeed complete.');
+}
+
+/**
+ * The starting catalogue.
+ *
+ * Seeded idempotently by slug, and only ever created — never updated. Changing a
+ * price here would silently reprice a plan an operator had already adjusted, and
+ * a seed that overwrites production data is a seed nobody dares run.
+ *
+ * `providerProduct` records which upstream product fulfils each plan. It is
+ * staff-only and never serialized to a customer.
+ */
+async function seedPlans(): Promise<void> {
+  const plans = [
+    {
+      name: 'Starter',
+      slug: 'starter',
+      description: 'One website, for a first site or a personal project.',
+      priceInPaise: 149_900,
+      billingCycle: 'YEARLY' as const,
+      maxWebsites: 1,
+      maxDomains: 1,
+      maxDatabases: 2,
+      maxMailboxes: 5,
+      storageGb: 25,
+      mailboxQuotaGb: 2,
+      providerProduct: 'agency-hosting',
+    },
+    {
+      name: 'Business',
+      slug: 'business',
+      description: 'Room for a growing set of sites, with mail included.',
+      priceInPaise: 449_900,
+      billingCycle: 'YEARLY' as const,
+      maxWebsites: 25,
+      maxDomains: 25,
+      maxDatabases: 50,
+      maxMailboxes: 50,
+      storageGb: 100,
+      mailboxQuotaGb: 5,
+      providerProduct: 'agency-hosting',
+    },
+    {
+      name: 'Agency',
+      slug: 'agency',
+      description: 'For running client sites at volume.',
+      priceInPaise: 1_199_900,
+      billingCycle: 'YEARLY' as const,
+      // Null is unlimited. Left unset rather than written as a large number:
+      // "unlimited" and "one hundred" are different promises to a customer.
+      maxWebsites: null,
+      maxDomains: null,
+      maxDatabases: null,
+      maxMailboxes: 200,
+      storageGb: 300,
+      mailboxQuotaGb: 10,
+      providerProduct: 'agency-hosting',
+    },
+  ];
+
+  let created = 0;
+  for (const plan of plans) {
+    const existing = await prisma.hostingPlan.findUnique({
+      where: { slug: plan.slug },
+      select: { id: true },
+    });
+    if (existing) continue;
+    await prisma.hostingPlan.create({ data: plan });
+    created += 1;
+  }
+
+  console.log(`  hosting plans: ${created} created, ${plans.length - created} already present`);
 }
 
 main()

@@ -24,7 +24,14 @@ type CustomerDetail = {
   }>;
   websites: Array<{ id: string; domain: string; status: string }>;
   domains: Array<{ id: string; name: string; status: string; expiresAt: string | null }>;
-  subscriptions: Array<{ id: string; status: string; plan: { name: string } }>;
+  subscriptions: Array<{
+    id: string;
+    status: string;
+    renewsAt: string;
+    autoRenew: boolean;
+    cancelledAt: string | null;
+    plan: { name: string };
+  }>;
 };
 
 type Invoice = {
@@ -162,9 +169,20 @@ export default async function AdminCustomerDetailPage({
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
               {c.subscriptions.map((sub) => (
-                <li key={sub.id} className="flex items-center justify-between gap-2">
-                  <span>{sub.plan.name}</span>
-                  <StatusBadge status={sub.status} />
+                <li key={sub.id} className="flex flex-wrap items-baseline justify-between gap-2">
+                  <span className="flex items-center gap-2">
+                    {sub.plan.name}
+                    <StatusBadge status={sub.status} />
+                  </span>
+                  <span className="text-ink-muted">
+                    {/* A cancelled subscription keeps running to the end of the
+                        period already paid for, so the date is what matters. */}
+                    {sub.cancelledAt
+                      ? `cancelled, runs to ${date(sub.renewsAt)}`
+                      : sub.autoRenew
+                        ? `renews ${date(sub.renewsAt)}`
+                        : `ends ${date(sub.renewsAt)}`}
+                  </span>
                 </li>
               ))}
             </ul>

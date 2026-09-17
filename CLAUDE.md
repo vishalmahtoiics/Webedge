@@ -16,11 +16,11 @@ Working rules for this repository.
 WebEdge Solution — a white-label hosting control panel and mail platform. Customers manage hosting, domains,
 DNS, files, databases and email through WebEdge and never encounter the underlying provider.
 
-- **Current phase:** 3–4 are built to the limit of what works without a provider account, and the staff
-  portal now covers what exists. Auth, RBAC, tenancy, provider credential storage, customer management, both
-  dashboards, DNS, the file manager over SFTP, SSL checking and GST/invoicing are done and tested, and
-  billing is exposed over the API to staff and customers. What remains needs the staging Hostinger account,
-  Razorpay, or mail infrastructure.
+- **Current phase:** 3–4 are built to the limit of what works without a provider account, and 6 is built up
+  to the point where money moves. Auth, RBAC, tenancy, provider credential storage, customer management, both
+  dashboards and portals, DNS, the file manager over SFTP, SSL checking, the audit trail, GST/invoicing, and
+  plans with the subscription lifecycle are done and tested. What remains needs the staging Hostinger
+  account, Razorpay, or mail infrastructure.
 - **Stack:** NestJS + Prisma + PostgreSQL (backend), Next.js (frontend), Redis + BullMQ (queues).
 
 ## Running it
@@ -92,6 +92,20 @@ Changing these needs a reason, not a preference.
   forgets who acted. Plain ids plus an `actorEmail` snapshot keep rows immutable and readable after deletion.
 - **Provider credentials use AES-256-GCM with a versioned key.** GCM authenticates, so tampered ciphertext
   fails loudly instead of yielding a corrupt token. The version allows rotation with overlap.
+- **Renewal dates never use `Date.setMonth`.** It overflows rather than clamping: 31 Jan + 1 month is
+  3 March, 31 Aug + 1 month is 1 October, and a leap-day yearly renewal lands on 1 March. Each is a billing
+  error that compounds — the anniversary drifts forward at every cycle and the customer gets days nobody
+  charged for. `billing-period.ts` clamps to the month's last day, and every renewal is measured from the
+  subscription's anchor rather than from the previous renewal, so a date that clamped to 28 February returns
+  to the 31st the next month instead of staying stuck.
+- **Proration measures the current period, not the subscription's lifetime.** The period being left runs one
+  cycle back from the next renewal. Prorating from `startsAt` would credit a long-standing customer for years
+  they already used.
+- **A plan is never deleted, only withdrawn.** Subscriptions and issued invoices both cite the plan that was
+  sold. Withdrawing stops new sales and leaves existing customers on what they bought.
+- **Cancelling a subscription ends it at the end of the paid period, not immediately.** The customer has paid
+  through `renewsAt`; cutting service off on the day they cancel takes back time they own. Auto-renew goes
+  off, `cancelledAt` is stamped, and the status stays ACTIVE until the period ends.
 - **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
   is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
   takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
@@ -120,6 +134,8 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/billing/gst.spec.ts` | Tax splits, rounding and credit notes reconcile exactly |
 | `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
 | `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps, and a credit note is identifiable as one |
+| `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
+| `test/subscription-lifecycle.spec.ts` | Renewing keeps the anniversary, cancelling keeps the paid period, a plan change credits only the unused part, and the catalogue never names the upstream product |
 
 Several suites run against real services rather than mocks, because they assert
 things a mock cannot show — that a symlink resolves somewhere its textual path
@@ -151,12 +167,12 @@ observed behaviour:
 
 ## Phases
 
-1. Foundation — auth, RBAC, tenancy ← *current*
+1. Foundation — auth, RBAC, tenancy
 2. Provider integration — multiple Hostinger accounts, encrypted credentials, resource mapping
 3. Hosting panel — dashboard, domains, websites, storage, DNS, file manager, editor
 4. Advanced hosting — databases, SSL, backups, WordPress
 5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail
-6. Business — plans, orders, Razorpay, invoices, renewals
+6. Business — plans, orders, Razorpay, invoices, renewals ← *current; everything but Razorpay*
 7. Scale — multiple providers, queues, monitoring, migration tools
 
 Each phase can only automate what the provider API actually exposes. Map every module against the current
