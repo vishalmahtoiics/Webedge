@@ -283,6 +283,44 @@ export function validateAgainstZone(
     });
   }
 
+  // Some TXT records must be unique even when their values differ, because the
+  // consuming spec treats "more than one" as a hard failure rather than picking
+  // one. Both of these fail *open* at the provider — it accepts the second
+  // record happily, and the customer's mail policy silently stops working.
+  if (input.type === 'TXT') {
+    const value = input.value.trim().toLowerCase();
+
+    // RFC 7489 §6.6.3: a domain publishes exactly one DMARC record. Two means
+    // no usable policy at all, not the stricter of the two.
+    if (input.name.toLowerCase() === '_dmarc' && value.startsWith('v=dmarc1')) {
+      const existingDmarc = sameName.some(
+        (r) => r.type === 'TXT' && r.value.trim().toLowerCase().startsWith('v=dmarc1'),
+      );
+      if (existingDmarc) {
+        issues.push({
+          field: 'value',
+          message:
+            'This domain already has a DMARC record. Edit the existing one — two DMARC records mean no policy is applied at all.',
+        });
+      }
+    }
+
+    // RFC 7208 §3.2: more than one SPF record is a permerror, so mail that would
+    // have passed starts failing.
+    if (value.startsWith('v=spf1')) {
+      const existingSpf = sameName.some(
+        (r) => r.type === 'TXT' && r.value.trim().toLowerCase().startsWith('v=spf1'),
+      );
+      if (existingSpf) {
+        issues.push({
+          field: 'value',
+          message:
+            'This name already has an SPF record. Combine the entries into one — two SPF records make every check fail.',
+        });
+      }
+    }
+  }
+
   // An exact duplicate is a no-op at best and confusing at worst.
   const duplicate = sameName.some(
     (r) =>

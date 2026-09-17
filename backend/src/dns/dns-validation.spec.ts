@@ -244,6 +244,38 @@ describe('zone-level rules', () => {
     expect(validateAgainstZone(record({ type: 'A', name: 'www', value: '203.0.113.11' }), existing)).toEqual([]);
   });
 
+  /**
+   * Both of these fail open at the provider: it accepts the second record and
+   * the customer's mail policy silently stops working, which is exactly the
+   * class of error this validation exists to catch.
+   */
+  it('refuses a second DMARC record', () => {
+    const zone = [record({ type: 'TXT', name: '_dmarc', value: 'v=DMARC1; p=quarantine;' })];
+    const issues = validateAgainstZone(
+      record({ type: 'TXT', name: '_dmarc', value: 'v=DMARC1; p=none;' }),
+      zone,
+    );
+    expect(issues[0]?.message).toMatch(/already has a DMARC record/i);
+  });
+
+  it('refuses a second SPF record', () => {
+    const zone = [record({ type: 'TXT', name: '@', value: 'v=spf1 include:a.example.com ~all' })];
+    const issues = validateAgainstZone(
+      record({ type: 'TXT', name: '@', value: 'v=spf1 include:b.example.com ~all' }),
+      zone,
+    );
+    expect(issues[0]?.message).toMatch(/already has an SPF record/i);
+  });
+
+  it('allows other TXT records alongside DMARC and SPF', () => {
+    const zone = [
+      record({ type: 'TXT', name: '@', value: 'v=spf1 include:a.example.com ~all' }),
+    ];
+    expect(
+      validateAgainstZone(record({ type: 'TXT', name: '@', value: 'google-site-verification=abc' }), zone),
+    ).toEqual([]);
+  });
+
   it('allows an unrelated name', () => {
     expect(validateAgainstZone(record({ type: 'A', name: 'api', value: '203.0.113.12' }), existing)).toEqual([]);
   });
