@@ -154,6 +154,8 @@ Changing these needs a reason, not a preference.
   Python needs 3.8+ where EL8 has 3.6.8 — an install that dies with a `SyntaxError` in a Python file and
   names none of the three causes. `@node-rs/argon2` needs GLIBC_2.14 and never invokes a compiler. If
   `npm ci` ever starts running `node-gyp`, that is a regression, not a toolchain to install.
+  `test/native-dependencies.spec.ts` enforces it, and distinguishes a blocking package from an optional one:
+  `cpu-features` fails loudly under ssh2 and npm carries on, so that noise in a build log is expected.
 - **One module owns password hashing.** `common/password-hashing.ts`. Four files used to import an argon2
   library directly and restate the cost parameters, which is why replacing it was a four-file change.
   Swapping a hashing library is only safe if hashes already in the database still verify and Dovecot still
@@ -198,6 +200,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
+| `test/native-dependencies.spec.ts` | No package npm cannot skip requires a compiler, so installing needs no toolchain |
 | `src/common/password-hashing.spec.ts` | Hashes written by other argon2 implementations still verify, so the library can be replaced without locking anyone out |
 | `src/installer/env-file.spec.ts` | Every generated `.env` value round-trips through the real dotenv, and a newline cannot become a setting |
 | `src/installer/lock.spec.ts` | The wizard closes permanently after installing, and the setup token is compared in constant time |

@@ -102,6 +102,28 @@ If another dependency does the same thing, the answer is the same: find one that
 ships a binary your platform can actually load. Installing a compiler on a
 production host to build a cryptography library is the worse trade.
 
+`test/native-dependencies.spec.ts` fails the build if any package npm cannot skip
+starts requiring a compiler, so this is caught here rather than on your server.
+
+### Gyp errors you can ignore
+
+`cpu-features` is an optional dependency of `ssh2`, used for a faster crypto
+path. On a host without a toolchain it fails to build with the same wall of
+node-gyp output — and npm carries on, because it is optional. The install
+succeeds and the file manager works.
+
+The difference that matters is the last line. `npm error` followed by
+`ERROR: Failed to install dependencies` is a real failure; gyp noise followed by
+`added N packages` is not.
+
+### If the error names a package that is no longer in package.json
+
+The build is compiling an older commit. Hostinger's build pipeline keeps a
+persistent workspace at `hbuilds/source/repository`, and a queued build runs
+against whatever it fetched when it was queued — not against the latest push.
+Trigger a fresh deploy, and if it still happens, clear the build cache so the
+workspace is re-cloned.
+
 ## What the installer does not do
 
 - **Install dependencies.** `npm ci` is the step before it, from your shell. An
