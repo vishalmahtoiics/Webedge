@@ -7,9 +7,14 @@
     "build": "next build",
     "start": "next start -p 3000",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "monaco:copy": "node -e \"const{cpSync,existsSync,rmSync}=require('fs');const d='public/monaco/vs';if(existsSync(d))rmSync(d,{recursive:true});cpSync('node_modules/monaco-editor/min/vs',d,{recursive:true});console.log('monaco copied to '+d)\"",
+    "prebuild": "npm run monaco:copy",
+    "predev": "npm run monaco:copy"
   },
   "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "monaco-editor": "^0.55.1",
     "next": "^15.5.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

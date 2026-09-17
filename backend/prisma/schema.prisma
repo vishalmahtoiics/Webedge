@@ -342,6 +342,8 @@ model Website {
   diskUsedBytes BigInt?
   lastSyncedAt  DateTime?
 
+  sftpCredential WebsiteSftpCredential?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -417,6 +419,43 @@ model DnsRecord {
   @@index([domainId])
   @@index([domainId, name])
   @@map("dns_records")
+}
+
+/// SFTP access for one website.
+///
+/// Separate from Website because it is a credential: it is written by the
+/// mapping wizard, read only by the file transport, and never serialized into
+/// any response. The password is encrypted with the same versioned key as
+/// provider tokens.
+///
+/// Hostinger exposes SFTP host, username and port through the Agency Hosting
+/// website record, but not the password — that has to be set in the provider
+/// panel and entered here, which is the main operational cost of onboarding a
+/// website.
+model WebsiteSftpCredential {
+  id        String  @id @default(uuid()) @db.Uuid
+  websiteId String  @unique @db.Uuid
+  website   Website @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+
+  host     String
+  port     Int    @default(22)
+  username String
+  /// Absolute path this website is confined to. Every file path resolves
+  /// against it, and nothing outside it is reachable.
+  root     String
+
+  ciphertext String
+  iv         String
+  authTag    String
+  keyVersion String
+
+  lastVerifiedAt DateTime?
+  lastError      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("website_sftp_credentials")
 }
 
 model HostingPlan {

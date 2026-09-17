@@ -212,11 +212,31 @@ export class SftpFileTransport {
       await this.assertRealPathInside(client, creds, posix.dirname(absolutePath));
 
       // If the target already exists, it must not be a symlink out of the root.
-      if (await client.exists(absolutePath)) {
+      const existed = Boolean(await client.exists(absolutePath));
+      let previousMode: number | undefined;
+
+      if (existed) {
         await this.assertRealPathInside(client, creds, absolutePath);
+        // Captured before the write, because put() does not preserve it.
+        previousMode = (await client.stat(absolutePath)).mode & 0o7777;
       }
 
       await client.put(Buffer.from(content, 'utf8'), absolutePath);
+
+      // put() creates the file with the server's own default, which observably
+      // widens a 0644 file to 0666 — world-writable. On shared hosting that
+      // lets any other account on the box rewrite the customer's PHP, so saving
+      // a file through the editor would quietly weaken its permissions every
+      // time. Restore what was there, and give new files 0644 rather than
+      // whatever the server felt like.
+      //
+      // The world-writable bit is cleared even when it was already set. A file
+      // the customer is editing in a web editor has no legitimate reason to be
+      // writable by every account on the server, and a file already at 0666
+      // — most likely damaged by this very bug before it was fixed — should not
+      // stay that way just because it arrived here broken.
+      const mode = (previousMode ?? 0o644) & ~0o002;
+      await client.chmod(absolutePath, mode);
     });
   }
 

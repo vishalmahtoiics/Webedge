@@ -118,6 +118,49 @@ describe('SFTP file transport', () => {
       expect((await transport.list(creds, 'wp-content')).map((e) => e.name)).toContain('moved.txt');
     });
 
+    /**
+     * ssh2-sftp-client's put() does not preserve the file mode: it observably
+     * widens a 0644 file to 0666. World-writable PHP on shared hosting means any
+     * other account on the box can rewrite the customer's site, so saving from
+     * the editor would weaken permissions a little more each time.
+     */
+    it('preserves the file mode when overwriting', async () => {
+      const { chmodSync, statSync } = await import('node:fs');
+      const real = '/home/wetest/public_html/mode-check.php';
+
+      // Created through the transport so it is owned by the SFTP user; a file
+      // written here as root could not be chmod'd over SFTP at all.
+      await transport.write(creds, 'mode-check.php', 'original');
+      chmodSync(real, 0o644);
+
+      await transport.write(creds, 'mode-check.php', 'overwritten by the test');
+
+      expect(statSync(real).mode & 0o7777).toBe(0o644);
+      await transport.remove(creds, 'mode-check.php');
+    });
+
+    /** A file already at 0666 is almost certainly damage, not intent. */
+    it('clears the world-writable bit even when it was already set', async () => {
+      const { chmodSync, statSync } = await import('node:fs');
+      const real = '/home/wetest/public_html/already-wide.txt';
+
+      await transport.write(creds, 'already-wide.txt', 'original');
+      chmodSync(real, 0o666);
+
+      await transport.write(creds, 'already-wide.txt', 'overwritten');
+
+      expect(statSync(real).mode & 0o002).toBe(0);
+      await transport.remove(creds, 'already-wide.txt');
+    });
+
+    it('creates new files as 0644 rather than world-writable', async () => {
+      const { statSync } = await import('node:fs');
+      await transport.write(creds, 'fresh-file.txt', 'new');
+
+      expect(statSync('/home/wetest/public_html/fresh-file.txt').mode & 0o7777).toBe(0o644);
+      await transport.remove(creds, 'fresh-file.txt');
+    });
+
     it('deletes a file', async () => {
       await transport.write(creds, 'to-delete.txt', 'x');
       await transport.remove(creds, 'to-delete.txt');
