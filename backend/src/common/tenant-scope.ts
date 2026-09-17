@@ -54,7 +54,9 @@ export class TenantScope {
     principal: Principal,
     model: ScopedModel,
     id: string,
-    resourceLabel = model,
+    // Free text rather than the model name: a DNS record is reached through its
+    // domain, and the error should name what the caller asked for.
+    resourceLabel: string = model,
   ): Promise<T> {
     const customerId = this.requireTenant(principal);
 

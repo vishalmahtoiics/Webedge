@@ -69,7 +69,10 @@ export class AppExceptionFilter implements ExceptionFilter {
 
       res.status(status).json({
         error: {
-          code: 'INVALID_REQUEST',
+          // The code must agree with the status. An unmatched route is a 404
+          // from the framework, and reporting it as INVALID_REQUEST makes a
+          // missing route look like a malformed request to anyone reading logs.
+          code: status === HttpStatus.NOT_FOUND ? 'RESOURCE_NOT_FOUND' : 'INVALID_REQUEST',
           message: Array.isArray(messages) ? messages.join(' ') : messages,
           requestId,
           ...(Array.isArray(messages) ? { details: { fields: messages } } : {}),

@@ -61,6 +61,17 @@ enum DomainStatus {
   PENDING_VERIFICATION
 }
 
+enum DnsRecordType {
+  A
+  AAAA
+  CNAME
+  MX
+  TXT
+  SRV
+  NS
+  CAA
+}
+
 enum SubscriptionStatus {
   ACTIVE
   PAST_DUE
@@ -359,6 +370,8 @@ model Domain {
   dnsManaged   Boolean   @default(false)
   lastSyncedAt DateTime?
 
+  dnsRecords DnsRecord[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -368,6 +381,43 @@ model Domain {
 }
 
 // ───────────────────────────── Plans & billing ─────────────────────────────
+
+/// A DNS record in a zone WebEdge manages.
+///
+/// Stored locally as the source of truth for the UI, then applied upstream.
+/// `providerSyncedAt` records when the provider last confirmed it, so the UI can
+/// show a record as still propagating rather than pretending it is live.
+model DnsRecord {
+  id       String @id @default(uuid()) @db.Uuid
+  domainId String @db.Uuid
+  domain   Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  type     DnsRecordType
+  /// '@' for the zone apex, otherwise a relative label such as 'www'.
+  name     String
+  value    String
+  ttl      Int           @default(3600)
+
+  /// MX and SRV.
+  priority Int?
+  /// SRV only.
+  weight   Int?
+  port     Int?
+
+  /// Records WebEdge created and depends on, such as the website A record and
+  /// email DNS. The UI labels these and warns before an edit.
+  managedByWebEdge Boolean @default(false)
+
+  providerRecordId String?
+  providerSyncedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([domainId])
+  @@index([domainId, name])
+  @@map("dns_records")
+}
 
 model HostingPlan {
   id          String  @id @default(uuid()) @db.Uuid
