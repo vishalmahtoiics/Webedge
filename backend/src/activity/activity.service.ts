@@ -81,6 +81,9 @@ export class ActivityService {
           action: input.action,
           adminUserId: isAdmin ? principal.userId : null,
           customerUserId: principal && !isAdmin ? principal.userId : null,
+          // Snapshotted, not joined: the trail must stay legible after the
+          // account is deleted or changes its address.
+          actorEmail: principal?.email ?? null,
           impersonatorAdminId: impersonatedCustomerId && isAdmin ? principal.userId : null,
           customerId:
             input.customerId ??
