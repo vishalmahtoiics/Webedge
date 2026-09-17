@@ -16,8 +16,8 @@ Working rules for this repository.
 WebEdge Solution — a white-label hosting control panel and mail platform. Customers manage hosting, domains,
 DNS, files, databases and email through WebEdge and never encounter the underlying provider.
 
-- **Current phase:** 3–4 are built to the limit of what works without a provider account, and 6 is built up
-  to the point where money moves. Auth, RBAC, tenancy, provider credential storage, customer management, both
+- **Current phase:** 3–4 are built to the limit of what works without a provider account, 6 is built up
+  to the point where money moves, and 5 has its foundation — addresses, passwords and routing. Auth, RBAC, tenancy, provider credential storage, customer management, both
   dashboards and portals, DNS, the file manager over SFTP, SSL checking, the audit trail, GST/invoicing, and
   plans with the subscription lifecycle are done and tested. What remains needs the staging Hostinger
   account, Razorpay, or mail infrastructure.
@@ -106,6 +106,23 @@ Changing these needs a reason, not a preference.
 - **Cancelling a subscription ends it at the end of the paid period, not immediately.** The customer has paid
   through `renewsAt`; cutting service off on the day they cancel takes back time they own. Auto-renew goes
   off, `cancelledAt` is stamped, and the status stays ACTIVE until the period ends.
+- **Mailbox passwords are hashed by WebEdge and verified by Dovecot.** argon2id, stored with Dovecot's
+  `{ARGON2ID}` prefix, which its own scheme reads directly — checked against a real `doveadm pw -t` rather
+  than assumed. No plaintext crosses a process boundary, so none can appear in a process listing or a shell
+  history, and nothing in the codebase can recover a password.
+- **Email local parts are narrower than RFC 5321 allows.** The RFC permits quoted local parts containing `/`
+  and `..`, which become a directory traversal the moment the local part is part of a maildir path.
+  `"../../etc"@example.com` is a legal address. Nobody has ever needed one, so they are refused at creation
+  rather than handled correctly by every component downstream.
+- **Local parts are compared case-insensitively.** The RFC says case *may* be significant; no mail system
+  treats it as such. Preserving it would let `Asha@` and `asha@` exist as two mailboxes, splitting one
+  person's mail or delivering it to the wrong one.
+- **An alias loop is refused before it is written, not detected at delivery.** Postfix catches the cycle after
+  accepting the message: the sender believes it was sent, nobody receives it, and the evidence is in a log
+  nobody reads. A diamond — two branches reaching the same mailbox — is not a loop and is allowed.
+- **A mail domain must prove ownership before mail is accepted for it.** Otherwise one customer adds
+  another's domain and starts receiving their mail. `postmaster`, `abuse` and the addresses a certificate
+  authority accepts as proof of control are reserved and never handed to a customer.
 - **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
   is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
   takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
@@ -135,12 +152,18 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
 | `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps, and a credit note is identifiable as one |
 | `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
+| `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
+| `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
+| `src/mail/mail-routing.spec.ts` | An alias cycle is found before it is written, and a diamond is not mistaken for one |
 | `test/subscription-lifecycle.spec.ts` | Renewing keeps the anniversary, cancelling keeps the paid period, a plan change credits only the unused part, and the catalogue never names the upstream product |
 
 Several suites run against real services rather than mocks, because they assert
 things a mock cannot show — that a symlink resolves somewhere its textual path
-does not reveal, that a database trigger refuses an UPDATE. Bring them up with
-`sudo backend/test/start-test-services.sh`.
+does not reveal, that a database trigger refuses an UPDATE, that Dovecot accepts
+a hash written here. Bring them up with `sudo backend/test/start-test-services.sh`,
+which also installs `dovecot-core` for `doveadm`. The mailbox password suite
+fails rather than skipping when it is missing: a green run that proved nothing is
+worse than a visible gap.
 
 Test files run one at a time (`fileParallelism: false`). Several of them assert
 properties of a whole table against one real database — that the serial sequence
@@ -171,7 +194,7 @@ observed behaviour:
 2. Provider integration — multiple Hostinger accounts, encrypted credentials, resource mapping
 3. Hosting panel — dashboard, domains, websites, storage, DNS, file manager, editor
 4. Advanced hosting — databases, SSL, backups, WordPress
-5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail
+5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail ← *foundation built; needs servers*
 6. Business — plans, orders, Razorpay, invoices, renewals ← *current; everything but Razorpay*
 7. Scale — multiple providers, queues, monitoring, migration tools
 

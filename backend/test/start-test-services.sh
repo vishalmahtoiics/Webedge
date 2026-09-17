@@ -2,8 +2,9 @@
 # Brings up everything the test suite needs: PostgreSQL and the SFTP fixture.
 #
 # Several suites run against real services on purpose — tenant isolation and the
-# append-only audit trail assert database behaviour, and the file transport
-# asserts that a symlink resolves somewhere its textual path does not reveal.
+# append-only audit trail assert database behaviour, the file transport asserts
+# that a symlink resolves somewhere its textual path does not reveal, and the
+# mailbox password suite asserts that Dovecot accepts the hashes WebEdge writes.
 # None of that can be shown with a mock.
 #
 # Needs root. Development only.
@@ -23,3 +24,12 @@ if ! (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null; then
   "$(dirname "$0")/sftp-fixture.sh" >/dev/null
 fi
 echo "sftp: $( (exec 3<>/dev/tcp/127.0.0.1/2222) 2>/dev/null && echo 'listening on 2222' || echo 'DOWN' )"
+
+# No daemon needed: the mailbox password suite shells out to `doveadm pw -t` to
+# confirm that a hash written here is one Dovecot will actually accept. Without
+# it that suite fails rather than passing quietly, because a green run that
+# proved nothing is worse than a visible gap.
+if ! command -v doveadm >/dev/null 2>&1; then
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq dovecot-core >/dev/null 2>&1 || true
+fi
+echo "doveadm: $(command -v doveadm >/dev/null 2>&1 && echo 'available' || echo 'MISSING — mailbox password tests will fail')"

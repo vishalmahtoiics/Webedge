@@ -165,6 +165,7 @@ model Customer {
   subscriptions Subscription[]
   notifications Notification[]
   invoices      Invoice[]
+  mailDomains   MailDomain[]
 
   @@index([status])
   @@map("customers")
@@ -679,6 +680,101 @@ model ActivityLog {
   @@index([action])
   @@index([createdAt])
   @@map("activity_logs")
+}
+
+/// Ownership of a mail domain must be proved before mail is accepted for it.
+/// Without that, one customer adds another's domain and starts receiving their
+/// mail — the whole platform's worst failure, and a trivially easy one.
+enum MailDomainStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  SUSPENDED
+}
+
+model MailDomain {
+  id         String   @id @default(uuid()) @db.Uuid
+  customerId String   @db.Uuid
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  /// Always stored lowercase. Mail domains are case-insensitive, and storing two
+  /// casings would let the same domain be claimed twice, by two tenants.
+  name   String           @unique
+  status MailDomainStatus @default(PENDING_VERIFICATION)
+
+  /// Random, per domain, published as a TXT record to prove control. Not a
+  /// secret — it is meant to be public — but unguessable so it cannot be
+  /// pre-published by someone who does not own the domain.
+  verificationToken String
+  verifiedAt        DateTime?
+
+  /// Total space this domain's mailboxes may use, in mebibytes. Null is
+  /// unlimited, which is a decision rather than an absence.
+  quotaMib Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  mailboxes Mailbox[]
+  aliases   MailAlias[]
+
+  @@index([customerId])
+  @@map("mail_domains")
+}
+
+model Mailbox {
+  id       String     @id @default(uuid()) @db.Uuid
+  domainId String     @db.Uuid
+  domain   MailDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  /// The part before the @, stored lowercase. Comparison is case-insensitive
+  /// everywhere: treating Asha@ and asha@ as two mailboxes puts two people's
+  /// mail in one place, or loses one of them.
+  localPart String
+
+  /// Dovecot password scheme string, e.g. "{ARGON2ID}$argon2id$v=19$...".
+  /// Hashed by WebEdge and verified by Dovecot directly — no plaintext ever
+  /// crosses a process boundary, and nothing here can recover a password.
+  passwordHash String
+
+  displayName String?
+  quotaMib    Int?
+  /// Last known usage, from the mail server. Null means never measured, which is
+  /// shown as "Not available" rather than as zero.
+  usedMib     Int?
+  usageSyncedAt DateTime?
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([domainId, localPart])
+  @@index([domainId])
+  @@map("mailboxes")
+}
+
+/// An alias forwards one address to one or more destinations. Destinations may
+/// be other aliases, which is why resolution has to detect cycles.
+model MailAlias {
+  id       String     @id @default(uuid()) @db.Uuid
+  domainId String     @db.Uuid
+  domain   MailDomain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  /// "*" is a catch-all for the domain, and is the one localpart that is not a
+  /// valid address in its own right.
+  localPart String
+
+  /// Full addresses, stored lowercase.
+  destinations String[]
+
+  isActive Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([domainId, localPart])
+  @@index([domainId])
+  @@map("mail_aliases")
 }
 
 model Notification {
