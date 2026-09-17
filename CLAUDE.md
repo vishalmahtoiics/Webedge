@@ -77,6 +77,13 @@ Changing these needs a reason, not a preference.
   forgets who acted. Plain ids plus an `actorEmail` snapshot keep rows immutable and readable after deletion.
 - **Provider credentials use AES-256-GCM with a versioned key.** GCM authenticates, so tampered ciphertext
   fails loudly instead of yielding a corrupt token. The version allows rotation with overlap.
+- **GST is computed in integer paise, per line, and rounded half away from zero.** Floats lose paise; taxing
+  the invoice total diverges from taxing lines the moment rates differ; and `Math.round` turns -0.5 into -0,
+  so a credit note would not exactly reverse its invoice.
+
+> **`src/billing/gst.ts` has not been reviewed by a Chartered Accountant.** The rules in it are read from the
+> CGST and IGST Acts and are tested thoroughly against that reading, which is not the same as being correct.
+> It must be reviewed before it bills anyone, and the tests are the artefact to hand the reviewer.
 
 ## Testing
 
@@ -91,9 +98,13 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/rbac/permissions.catalog.spec.ts` | No role is composed from another realm's keys |
 | `test/sftp-file-transport.spec.ts` | A symlink inside the website cannot be used to read, write or delete outside it |
 
-The SFTP suite needs a real server, not a mock: its central claim is that a
-symlink resolves somewhere its textual path does not reveal, which only a real
-filesystem can show. Start it with `sudo backend/test/sftp-fixture.sh`.
+| `src/billing/gst.spec.ts` | Tax splits, rounding and credit notes reconcile exactly |
+| `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
+
+Several suites run against real services rather than mocks, because they assert
+things a mock cannot show — that a symlink resolves somewhere its textual path
+does not reveal, that a database trigger refuses an UPDATE. Bring them up with
+`sudo backend/test/start-test-services.sh`.
 
 When you fix a bug, prefer a test that catches the whole class over one that catches the instance. The
 `SUPPORT_STAFF` cross-realm bug is the example: the fix was a rule, not a corrected list.
