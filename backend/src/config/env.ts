@@ -26,6 +26,20 @@ const schema = z.object({
   CLIENT_ORIGIN: z.string().url().default('http://localhost:3000'),
   ADMIN_ORIGIN: z.string().url().default('http://localhost:3001'),
 
+  /**
+   * How often the renewal sweep runs, in minutes, and whether it runs at all.
+   *
+   * The frequency is not a correctness parameter — every step of the sweep is
+   * idempotent and catches up on whatever it missed, so a sweep that is late
+   * bills the same amounts on the same dates. It is a latency parameter: how
+   * long after midnight a renewal invoice appears.
+   *
+   * Zero switches it off, which is what the test suite and the installer want.
+   * A deployment that turns it off has subscriptions that never renew, so it is
+   * off only by deliberate choice, never by default.
+   */
+  RENEWAL_SWEEP_MINUTES: z.coerce.number().int().min(0).max(1440).default(60),
+
   COOKIE_SECURE: z
     .enum(['true', 'false'])
     .default('true')

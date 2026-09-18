@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { SubscriptionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
-import { InvoiceService } from '../billing/invoice.service';
+import { InvoiceService, isDuplicatePeriod } from '../billing/invoice.service';
 import { MONTHS_IN_CYCLE, addMonths, nextRenewal, renewalAfter } from '../billing/billing-period';
 import { prorate } from '../billing/gst';
 import { AppError, notFound } from '../common/errors';
@@ -75,8 +75,44 @@ export class SubscriptionsService {
    * happens to be renewed on. Renewing late must not move the anniversary — a
    * subscription processed three days after its renewal date is still due on the
    * same day of the month next time.
+   *
+   * **Invoicing happens before the date advances, and both steps are keyed to
+   * the period.** The order is deliberate and is what makes an interrupted
+   * renewal safe:
+   *
+   *  - Advance first and die, and the period is gone with nothing billed for
+   *    it. Nobody notices, because the next sweep sees a subscription that is
+   *    not due.
+   *  - Invoice first and die, and the next sweep finds the subscription still
+   *    due, tries to invoice, is refused by the unique index, recovers the
+   *    invoice that already exists and finishes the advance. Self-healing, and
+   *    at no point is a customer charged twice.
+   *
+   * The advance is a compare-and-swap on the date that was invoiced against, so
+   * a renewal that lost the race cannot advance the period a second time.
+   *
+   * `principal` is optional because the renewal worker has no session. The trail
+   * then records a renewal with no actor, which is the truth: nobody did it.
+   *
+   * **`expectedPeriodStart` pins which period the caller means.** A caller that
+   * selected this subscription earlier — the sweep lists what is due and then
+   * renews each row — is working from a value that may already be stale. Without
+   * the pin, re-reading the row picks up whatever it says *now*: if another
+   * sweep advanced it a millisecond ago, this one invoices for the period that
+   * has not started yet, under a different key that the unique index has no
+   * reason to reject. That is a second charge, dated a full cycle into the
+   * future, and it was reproducible — two invoices from ten concurrent sweeps,
+   * flaky in proportion to how long the batch took.
+   *
+   * A caller that passes no pin is asking to renew whatever period is next,
+   * which is what an administrator pressing the button means. That path reads
+   * the row itself, so it has no stale value to be wrong about.
    */
-  async renew(principal: Principal, subscriptionId: string) {
+  async renew(
+    principal: Principal | undefined,
+    subscriptionId: string,
+    expectedPeriodStart?: Date,
+  ) {
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: subscriptionId },
       include: { plan: true },
@@ -86,41 +122,93 @@ export class SubscriptionsService {
     if (subscription.status === SubscriptionStatus.CANCELLED) {
       throw new AppError('CONFLICT', 'That subscription was cancelled and cannot be renewed.');
     }
+    if (subscription.status === SubscriptionStatus.EXPIRED) {
+      throw new AppError('CONFLICT', 'That subscription has expired and cannot be renewed.');
+    }
 
+    // The period being charged for. Named by the date it starts, which is the
+    // renewal date as it stands right now — before anything advances it.
+    const periodStart = subscription.renewsAt;
+
+    if (expectedPeriodStart && periodStart.getTime() !== expectedPeriodStart.getTime()) {
+      // Someone renewed this period between the caller selecting it and now.
+      // Renewing the *next* period instead would charge for time the customer
+      // has not reached, so this does nothing and says so.
+      return {
+        subscription,
+        invoice: undefined,
+        alreadyInvoiced: false,
+        advanced: false,
+        skipped: true as const,
+      };
+    }
     const renewsAt = renewalAfter(
       subscription.startsAt,
       subscription.renewsAt,
       subscription.plan.billingCycle,
     );
 
-    const invoice = await this.invoices.issue(principal, {
-      customerId: subscription.customerId,
-      lines: [
-        {
-          description: `${subscription.plan.name} — renewal to ${renewsAt.toISOString().slice(0, 10)}`,
-          unitPriceInPaise: subscription.plan.priceInPaise,
-          quantity: 1,
-        },
-      ],
-      dueAt: subscription.renewsAt,
+    let alreadyInvoiced = false;
+    let invoice;
+    try {
+      invoice = await this.invoices.issue(principal, {
+        customerId: subscription.customerId,
+        lines: [
+          {
+            description: `${subscription.plan.name} — renewal to ${renewsAt.toISOString().slice(0, 10)}`,
+            unitPriceInPaise: subscription.plan.priceInPaise,
+            quantity: 1,
+          },
+        ],
+        dueAt: subscription.renewsAt,
+        forPeriod: { subscriptionId, periodStart },
+      });
+    } catch (error) {
+      if (!isDuplicatePeriod(error)) throw error;
+
+      // Another renewal got there first. Its invoice is the one that counts.
+      alreadyInvoiced = true;
+      const existing = await this.invoices.forPeriod(subscriptionId, periodStart);
+      if (!existing) {
+        throw new AppError(
+          'OPERATION_FAILED',
+          'That period was already invoiced, but the invoice could not be read back.',
+        );
+      }
+      invoice = existing;
+    }
+
+    // Only if the date is still the one just invoiced against. A concurrent
+    // renewal that already advanced it must not advance it again — that would
+    // skip a period nobody was charged for.
+    const advanced = await this.prisma.subscription.updateMany({
+      where: { id: subscriptionId, renewsAt: periodStart },
+      data: { renewsAt },
     });
 
-    const renewed = await this.prisma.subscription.update({
+    if (advanced.count > 0) {
+      await this.activity.record(principal, {
+        action: 'billing.subscription.renewed',
+        customerId: subscription.customerId,
+        resourceType: 'subscription',
+        resourceId: subscriptionId,
+        visibility: 'CUSTOMER',
+        oldValue: { renewsAt: periodStart },
+        newValue: { renewsAt, invoiceNumber: invoice.invoiceNumber },
+      });
+    }
+
+    const renewed = await this.prisma.subscription.findUniqueOrThrow({
       where: { id: subscriptionId },
-      data: { renewsAt, status: SubscriptionStatus.ACTIVE },
     });
 
-    await this.activity.record(principal, {
-      action: 'billing.subscription.renewed',
-      customerId: subscription.customerId,
-      resourceType: 'subscription',
-      resourceId: subscriptionId,
-      visibility: 'CUSTOMER',
-      oldValue: { renewsAt: subscription.renewsAt },
-      newValue: { renewsAt, invoiceNumber: invoice.invoiceNumber },
-    });
-
-    return { subscription: renewed, invoice };
+    return {
+      subscription: renewed,
+      invoice,
+      alreadyInvoiced,
+      advanced: advanced.count > 0,
+      skipped: false as const,
+    };
   }
 
   /**

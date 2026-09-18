@@ -106,6 +106,30 @@ Changing these needs a reason, not a preference.
 - **Proration measures the current period, not the subscription's lifetime.** The period being left runs one
   cycle back from the next renewal. Prorating from `startsAt` would credit a long-standing customer for years
   they already used.
+- **The renewal sweep invoices before it advances the date, and the database is its queue.** Nothing renewed
+  anything until the worker existed: `renewsAt` was a date no code read, so a subscription passed it, no
+  invoice was raised, service continued, and a cancelled customer kept their hosting indefinitely. The order
+  is the design. Advance first and a crash loses the period silently — the date moved, nothing was billed,
+  and no later sweep notices because the subscription is no longer due. Invoice first and a crash is
+  recoverable: the next sweep finds it still due, is refused by the unique index on
+  `(subscriptionId, periodStart)`, recovers the invoice that exists and finishes the advance. There is no
+  Redis queue because a second store of who has been billed is a way to bill someone twice; the unique index
+  is the lock and the table is the queue.
+- **A worker that lists rows and then acts on them must pin what it listed.** `renew` re-reads the
+  subscription, so a sweep that lost the race would read the *advanced* date and invoice for a period that
+  has not started — a different key, which the unique index has no reason to refuse, producing a second
+  charge dated a full cycle ahead. Reproduced: twenty-five due subscriptions and six concurrent sweeps issued
+  twenty-eight invoices. The caller now passes the period it selected and the renewal does nothing if the row
+  has moved. Idempotency on the write is not enough when the read is what went stale.
+- **PAST_DUE is set and cleared in one place, and renewal does not touch it.** It is a statement about unpaid
+  invoices, and raising another invoice does not settle the ones outstanding. A status that can be set but
+  never cleared leaves a customer who has paid marked as in arrears until support edits the database.
+- **A scheduled action is named as one in the customer's trail.** Their own user is named, a staff member is
+  "WebEdge support", and a row with no actor at all is "WebEdge (automatic)". Calling an automatic renewal
+  "WebEdge support" tells the customer a person opened their account and acted on it — which is the first
+  thing they ask when a charge is unexpected, and it is not true.
+- **Expiry is filtered on `cancelledAt`, not on `autoRenew`.** Auto-renew switched off without a cancellation
+  is a customer who intends to pay by hand; expiring them cuts off someone who is paying.
 - **A plan is never deleted, only withdrawn.** Subscriptions and issued invoices both cite the plan that was
   sold. Withdrawing stops new sales and leaves existing customers on what they bought.
 - **Cancelling a subscription ends it at the end of the paid period, not immediately.** The customer has paid
@@ -212,6 +236,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/billing/gst.spec.ts` | Tax splits, rounding and credit notes reconcile exactly |
 | `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
 | `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps, and a credit note is identifiable as one |
+| `test/renewal-worker.spec.ts` | A subscription is invoiced exactly once per period under retries, concurrent sweeps and an interrupted run, and never for a period that has not started |
 | `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
@@ -266,7 +291,9 @@ observed behaviour:
 3. Hosting panel — dashboard, domains, websites, storage, DNS, file manager, editor
 4. Advanced hosting — databases, SSL, backups, WordPress
 5. WebEdge Mail — Postfix, Dovecot, mailboxes, quotas, IMAP/SMTP, webmail ← *panel, rules and lookup maps built; needs servers*
-6. Business — plans, orders, Razorpay, invoices, renewals ← *current; everything but Razorpay*
+6. Business — plans, orders, Razorpay, invoices, renewals ← *current; everything but Razorpay. Renewals
+   run on their own timer and stop at the point money moves — an invoice is raised and marked due, and
+   nothing marks it paid.*
 7. Scale — multiple providers, queues, monitoring, migration tools
 
 Each phase can only automate what the provider API actually exposes. Map every module against the current

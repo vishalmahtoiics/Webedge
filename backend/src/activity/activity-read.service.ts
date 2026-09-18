@@ -129,12 +129,30 @@ export class ActivityReadService {
         createdAt: row.createdAt,
         /**
          * Who acted, as far as a customer is concerned. Their own user is named;
-         * anyone else is "WebEdge support". A staff address identifies a named
-         * employee to an outside party, and is also a valid address to attack.
+         * a staff member is "WebEdge support". A staff address identifies a
+         * named employee to an outside party, and is also a valid address to
+         * attack.
+         *
+         * A row with no actor at all was written by a scheduled process — a
+         * renewal, an expiry — and is named as one. Calling that "WebEdge
+         * support" would tell the customer a person opened their account and
+         * acted on it, which is not what happened, and is the sort of thing
+         * they ask about when the charge is unexpected.
          */
-        actor: row.customerUserId ? row.actorEmail : 'WebEdge support',
+        actor: ActivityReadService.actorFor(row),
       })),
     };
+  }
+
+  /** Named for a customer's eyes. See the comment at the call site. */
+  private static actorFor(row: {
+    customerUserId: string | null;
+    adminUserId: string | null;
+    actorEmail: string | null;
+  }): string | null {
+    if (row.customerUserId) return row.actorEmail;
+    if (row.adminUserId || row.actorEmail) return 'WebEdge support';
+    return 'WebEdge (automatic)';
   }
 
   private filters(query: ActivityQuery): Prisma.ActivityLogWhereInput {
