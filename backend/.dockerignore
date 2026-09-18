@@ -10,4 +10,8 @@ tsconfig.tsbuildinfo
 !.env.example
 *.log
 coverage
-.nixpacks
+
+# .nixpacks is deliberately NOT ignored. The builder generates its Dockerfile
+# and its nix expression into that directory and then COPYs the expression in,
+# so excluding it fails the build at the third layer with "not found" for a
+# file the builder had just written itself.

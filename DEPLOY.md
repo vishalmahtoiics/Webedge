@@ -61,6 +61,15 @@ npm run seed
 
 Or use the setup wizard instead — see `INSTALL.md`.
 
+### A note on `.dockerignore`
+
+It is applied before the Dockerfile runs, so a pattern there can delete a file
+the builder itself generated. `.nixpacks` looks like scratch output and is, but
+the builder writes its Dockerfile and nix expression into it and then copies
+them in — ignoring it fails the build at the third layer with `not found` for a
+file written seconds earlier. `test/build-output.spec.ts` asserts what the build
+context must still contain.
+
 ## Frontend
 
 | Setting | Value |

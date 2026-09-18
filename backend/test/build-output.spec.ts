@@ -107,3 +107,67 @@ describe('build output', () => {
     }
   });
 });
+
+/**
+ * What the deployment build needs to be able to see.
+ *
+ * `.dockerignore` is applied before the Dockerfile runs, so a pattern here can
+ * remove a file the builder itself wrote moments earlier. That is not
+ * hypothetical: ignoring `.nixpacks` — which looks like generated scratch, and
+ * is — failed a deploy at the third layer with `not found` for the nix
+ * expression the builder had just generated into it.
+ *
+ * Listed by what breaks rather than by name alone, because the next person
+ * reading a `not found` in a build log is trying to work out which of these
+ * patterns did it.
+ */
+describe('docker build context', () => {
+  const ignoreFile = join(backendDir, '.dockerignore');
+
+  /** Whether `.dockerignore` excludes a path, honouring `!` negations. */
+  function isIgnored(path: string): boolean {
+    const patterns = readFileSync(ignoreFile, 'utf8')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '' && !line.startsWith('#'));
+
+    let ignored = false;
+    for (const pattern of patterns) {
+      const negated = pattern.startsWith('!');
+      const body = negated ? pattern.slice(1) : pattern;
+      // Docker matches path segments; a bare name matches the whole entry.
+      const expression = new RegExp(
+        `^${body.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '[^/]*').replace(/\?/g, '[^/]')}(/.*)?$`,
+      );
+      if (expression.test(path)) ignored = !negated;
+    }
+    return ignored;
+  }
+
+  const MUST_REACH_THE_BUILD: Array<[string, string]> = [
+    ['.nixpacks', 'the builder generates its Dockerfile and nix expression here and then COPYs them in'],
+    ['nixpacks.toml', 'it pins the Node version and the container entry point'],
+    ['package.json', 'nothing installs without it'],
+    ['package-lock.json', 'npm ci requires it'],
+    ['prisma', 'the schema and migrations — the build generates the client and the container applies them'],
+    ['src', 'the application'],
+    ['.npmrc', 'it switches install scripts off, and losing it silently re-enables them'],
+  ];
+
+  it.each(MUST_REACH_THE_BUILD)('does not exclude %s', (path, why) => {
+    expect(isIgnored(path), `.dockerignore excludes ${path}, and ${why}`).toBe(false);
+  });
+
+  /**
+   * The other direction. A developer's `node_modules` or `dist` copied into the
+   * context lands on top of the image's own, which is how a build that looks
+   * clean ends up running code nobody built.
+   */
+  it.each([['node_modules'], ['dist'], ['.env']])('excludes %s', (path) => {
+    expect(isIgnored(path), `.dockerignore should exclude ${path}`).toBe(true);
+  });
+
+  it('keeps .env.example, which documents names only', () => {
+    expect(isIgnored('.env.example')).toBe(false);
+  });
+});
