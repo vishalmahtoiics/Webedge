@@ -23,6 +23,21 @@ export type IssueInvoiceInput = {
   lines: LineItem[];
   discountInPaise?: number;
   dueAt?: Date;
+  /**
+   * Marks this as the invoice for one subscription period, and makes issuing it
+   * twice impossible rather than merely unlikely.
+   *
+   * `periodStart` is the subscription's renewal date *before* it was advanced,
+   * so it names the period being charged for exactly. A unique index covers the
+   * pair, so a retry, a second worker, or an administrator pressing "Renew"
+   * while the sweep runs all fail on the constraint instead of issuing a second
+   * invoice — which matters because an issued invoice cannot be deleted, and
+   * the only correction for a charge that should not exist is a credit note.
+   *
+   * The failure happens inside the transaction that allocates the serial, so
+   * the allocation rolls back with it and the sequence stays gapless.
+   */
+  forPeriod?: { subscriptionId: string; periodStart: Date };
 };
 
 /**
@@ -51,6 +66,24 @@ export function financialYearFor(date: Date): string {
 
 export function formatInvoiceNumber(financialYear: string, serial: number): string {
   return `WEB/${financialYear}/${String(serial).padStart(5, '0')}`;
+}
+
+/**
+ * Whether a write failed because this period had already been invoiced.
+ *
+ * The renewal worker treats this as success rather than as an error: the
+ * invoice it was about to write already exists, which is exactly the outcome
+ * wanted. Narrowed to the one constraint, because any other unique violation —
+ * a duplicate invoice number above all — is a real fault and must not be
+ * swallowed as "already done".
+ */
+export function isDuplicatePeriod(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== 'P2002') {
+    return false;
+  }
+  const target = error.meta?.['target'];
+  const fields = Array.isArray(target) ? target.map(String) : [String(target ?? '')];
+  return fields.some((field) => field.includes('periodStart') || field.includes('subscriptionId'));
 }
 
 @Injectable()
@@ -156,6 +189,9 @@ export class InvoiceService {
           roundOffInPaise: totals.roundOffInPaise,
           totalInPaise: totals.totalInPaise,
 
+          subscriptionId: input.forPeriod?.subscriptionId ?? null,
+          periodStart: input.forPeriod?.periodStart ?? null,
+
           issuedAt,
           dueAt: input.dueAt ?? null,
 
@@ -192,6 +228,18 @@ export class InvoiceService {
     }
 
     return invoice;
+  }
+
+  /**
+   * The invoice already issued for a subscription period, if there is one.
+   *
+   * Used after a duplicate is refused, to recover the document that won the
+   * race so the caller can carry on with it rather than failing the renewal.
+   */
+  async forPeriod(subscriptionId: string, periodStart: Date) {
+    return this.prisma.invoice.findUnique({
+      where: { subscriptionId_periodStart: { subscriptionId, periodStart } },
+    });
   }
 
   /**

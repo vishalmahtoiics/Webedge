@@ -1,7 +1,8 @@
 import { BillingCycle } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
-  IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength,
+  IsBoolean, IsIn, IsInt, IsISO8601, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min,
+  MinLength,
 } from 'class-validator';
 
 export class CreatePlanDto {
@@ -126,4 +127,17 @@ export class ListPlansQueryDto {
 
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   take?: number;
+}
+
+export class DueRenewalsQueryDto {
+  /**
+   * Look ahead to a date, so an operator can see what next week costs before
+   * committing to it. Defaults to now, which is what the sweep itself uses.
+   */
+  @IsOptional() @IsISO8601()
+  before?: string;
+
+  /** Bounded here as well as in the service: every list endpoint has a ceiling. */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100)
+  limit?: number;
 }

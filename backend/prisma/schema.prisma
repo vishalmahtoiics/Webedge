@@ -536,6 +536,17 @@ model Invoice {
   roundOffInPaise  Int @default(0)
   totalInPaise     Int
 
+  /// Set only on a renewal invoice, and the reason the renewal worker cannot
+  /// charge twice for one period. `periodStart` is the subscription's renewal
+  /// date before it was advanced, so it names the period exactly. The unique
+  /// index below is what enforces it — a second attempt fails on the constraint
+  /// inside the same transaction that allocates the serial, so no number is
+  /// burned and the sequence stays gapless. Both are null on every other
+  /// document, and Postgres treats nulls in a unique index as distinct, so
+  /// manual invoices and credit notes never collide with each other.
+  subscriptionId String?   @db.Uuid
+  periodStart    DateTime?
+
   issuedAt DateTime?
   dueAt    DateTime?
   paidAt   DateTime?
@@ -549,6 +560,7 @@ model Invoice {
 
   lines InvoiceLine[]
 
+  @@unique([subscriptionId, periodStart])
   @@index([customerId, createdAt])
   @@index([status])
   @@map("invoices")
