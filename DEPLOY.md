@@ -3,7 +3,61 @@
 Written against a Coolify/Nixpacks deploy, but the reasoning applies to any
 platform that builds from the repository.
 
-## Two applications, not one
+## One application (recommended)
+
+Deploy the repository **root**. One resource, one domain, one port: the portal
+is published, and the API runs on loopback behind it.
+
+| Setting | Value |
+|---|---|
+| Base directory | `/` (the repository root — **not** `backend`) |
+| Ports exposes | `3000` |
+| Domain | the one people will visit |
+
+Environment variables — three, and all of them runtime, never build:
+
+```
+DATABASE_URL=postgres://user:password@host:5432/database
+JWT_ACCESS_SECRET=<openssl rand -base64 48>
+CREDENTIAL_ENCRYPTION_KEY=<openssl rand -hex 32>
+```
+
+`PORT` is supplied by the platform; leave it alone unless you also change
+"ports exposes" to match. `CLIENT_ORIGIN`, `ADMIN_ORIGIN` and `API_BASE_URL`
+are **not needed** here — `scripts/start.mjs` wires the portal to the API over
+127.0.0.1, so no request is ever cross-origin and nothing has an origin to get
+wrong.
+
+`scripts/start.mjs` applies migrations, starts the API on loopback, waits for it
+to answer, then starts the portal on the public port. Both share a lifetime: if
+either dies the other is stopped and the container exits non-zero, so the
+platform restarts a whole system rather than leaving half of one answering
+requests it cannot serve.
+
+### After the first deploy
+
+There is no account until you make one. In the container's terminal:
+
+```bash
+npm run seed
+```
+
+It prints the administrator's password **once**. Copy it immediately.
+
+### Then
+
+`https://<your-domain>/admin/login` is the staff portal and
+`https://<your-domain>/login` is the customer portal. They are the same
+application.
+
+### Why the API is not published
+
+Nothing outside the container can reach it, and the browser never addresses it.
+That is the point: the session token stays in an httpOnly cookie that only
+Next.js reads, and a stored XSS on a portal page cannot exfiltrate it. Visiting
+`/api/v1/...` on the public domain returns the portal's 404, which is correct.
+
+## Alternative: two applications
 
 `backend/` and `frontend/` are separate deployables and need a resource each.
 Pointing a single resource at `backend/` gives you a JSON API on your domain and

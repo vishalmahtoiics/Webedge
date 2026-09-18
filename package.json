@@ -1,0 +1,17 @@
+{
+  "name": "webedge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebEdge Solution — API and portal, deployable as one application.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "//": "These exist so the whole system deploys as ONE application. backend/ and frontend/ remain independently runnable; see DEPLOY.md for running them as two.",
+    "install:all": "cd backend && npm ci && cd ../frontend && npm ci",
+    "build": "cd backend && npm run build && cd ../frontend && npm run build",
+    "start": "node scripts/start.mjs",
+    "seed": "cd backend && npm run seed",
+    "migrate": "cd backend && npx prisma migrate deploy"
+  }
+}

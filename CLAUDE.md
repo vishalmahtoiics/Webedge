@@ -41,10 +41,16 @@ Postgres on purpose, because they assert database-level behaviour that mocks can
 
 ## Deploying it
 
-See `DEPLOY.md`. `backend/` and `frontend/` are separate deployables, the backend's
-container entry point is `npm run start:container` (migrations, then `dist/main.js`),
-and the exposed port must match `PORT`. Never use `npm start` as a container entry
-point: it clears `dist` and recompiles, discarding the image's build on every restart.
+See `DEPLOY.md`. The repository root deploys as **one** application: `scripts/start.mjs`
+runs migrations, starts the API on loopback and publishes only the portal, so no request
+is cross-origin and `CLIENT_ORIGIN`, `ADMIN_ORIGIN` and `API_BASE_URL` have nothing to get
+wrong. Deploying `backend/` and `frontend/` separately still works and is documented, but
+it needs four settings to agree across two resources, and each way of getting them wrong
+fails silently — a domain answering 404, or a page that loads and cannot sign in.
+
+`backend/` alone uses `npm run start:container` (migrations, then `dist/main.js`). Never
+`npm start` as a container entry point there: it clears `dist` and recompiles, discarding
+the image's build on every restart.
 
 ## Non-negotiables
 

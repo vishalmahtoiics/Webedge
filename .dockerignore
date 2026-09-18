@@ -1,0 +1,12 @@
+# .nixpacks is deliberately absent. The builder generates its Dockerfile and
+# nix expression into that directory and then copies them in, so ignoring it
+# fails the build on a file the builder wrote itself.
+**/node_modules
+backend/dist
+backend/tsconfig.tsbuildinfo
+frontend/.next
+frontend/public/monaco
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
