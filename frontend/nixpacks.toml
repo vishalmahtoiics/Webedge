@@ -1,0 +1,20 @@
+# Deployment build plan for the portal.
+#
+# Node is pinned for the same reason as the backend: without it the builder
+# defaults to 18, which this stack does not support, and says so in warnings
+# that a successful build buries.
+#
+# `npm start` is the right entry point here, unlike in backend/ — `next start`
+# serves the build rather than recreating it.
+
+[phases.setup]
+nixPkgs = ['nodejs_22']
+
+[phases.install]
+cmds = ['npm ci']
+
+[phases.build]
+cmds = ['npm run build']
+
+[start]
+cmd = 'npm run start'

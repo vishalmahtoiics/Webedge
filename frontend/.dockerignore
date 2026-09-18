@@ -1,0 +1,13 @@
+# .nixpacks is deliberately absent from this list. The builder generates its
+# Dockerfile and nix expression into that directory and then copies them in, so
+# ignoring it fails the build on a file the builder wrote itself.
+node_modules
+.next
+.env
+.env.*
+!.env.example
+*.log
+
+# Copied out of node_modules by the prebuild step, so a stale local copy would
+# land on top of the one the build produces.
+public/monaco

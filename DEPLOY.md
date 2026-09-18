@@ -72,15 +72,56 @@ context must still contain.
 
 ## Frontend
 
+Both portals are one Next.js application. `/admin/...` and the customer pages are
+route groups inside it, so there is one resource and one port — not two.
+
 | Setting | Value |
 |---|---|
 | Base directory | `frontend` |
 | Ports exposes | `3000` |
-| Build | `npm run build` |
-| Start | `npm run start` |
+| Domain | the one people will visit |
 
-It needs the API's public URL, and `CLIENT_ORIGIN` / `ADMIN_ORIGIN` on the
-backend must name the frontend's URL, or CORS refuses the browser's requests.
+`nixpacks.toml` pins Node 22 and the start command. Unlike the backend, `npm
+start` is the right entry point: `next start` serves the build rather than
+recreating it.
+
+One variable:
+
+```
+API_BASE_URL=https://<backend-domain>/api/v1
+```
+
+Server-side only, and deliberately not prefixed `NEXT_PUBLIC_`: the browser
+never talks to the API directly, so the session token stays in an httpOnly
+cookie and out of browser JavaScript.
+
+### The backend's origins must name this application
+
+```
+CLIENT_ORIGIN=https://<frontend-domain>
+ADMIN_ORIGIN=https://<frontend-domain>
+```
+
+The same URL twice, because it is the same application. Pointing either at
+`localhost` means the container itself, so CORS rejects every request the
+browser makes and the portal fails with nothing useful in any log.
+
+### Visiting the backend's domain gives a 404
+
+That is correct: every API route is under `/api/v1`, and `/admin/login` is a page
+this application serves, not the API. A 404 carrying `Content-Security-Policy`
+and `X-Content-Type-Options` headers came from the API itself, which means the
+container is up and the proxy is reaching it. A bare 404 or a 502 without those
+headers is the proxy failing to reach the container — usually the exposed port
+not matching `PORT`.
+
+### Sign-in over plain HTTP
+
+Session cookies are `secure` when `NODE_ENV` is `production`, which the builder
+sets. A browser silently discards those over plain HTTP: sign-in appears to
+succeed and returns to the login page with no error anywhere. Browsers treat
+`*.localhost` as a secure context so a local demo may work, but anything on a
+real domain needs HTTPS.
 
 ## The domain
 
