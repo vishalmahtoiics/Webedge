@@ -33,7 +33,7 @@ async function bootstrap(): Promise<void> {
     credentials: true,
   });
 
-  await app.listen(config.PORT);
+  await app.listen(config.PORT, '0.0.0.0');
 }
 
 void bootstrap();
