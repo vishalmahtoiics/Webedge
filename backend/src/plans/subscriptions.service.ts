@@ -353,7 +353,12 @@ export class SubscriptionsService {
       },
       orderBy: { renewsAt: 'asc' },
       take: Math.min(Math.max(take, 1), 100),
-      include: { plan: { select: { name: true, priceInPaise: true } } },
+      include: {
+        plan: { select: { name: true, priceInPaise: true } },
+        // For the operator reading the list. A customer id answers no question
+        // anyone actually has about an upcoming charge.
+        customer: { select: { fullName: true, companyName: true } },
+      },
     });
   }
 }

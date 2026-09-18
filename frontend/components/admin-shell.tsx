@@ -8,6 +8,7 @@ const NAV = [
   { href: '/admin/providers', label: 'Infrastructure' },
   { href: '/admin/plans', label: 'Plans' },
   { href: '/admin/billing', label: 'Billing' },
+  { href: '/admin/renewals', label: 'Renewals' },
   { href: '/admin/activity', label: 'Activity' },
 ];
 

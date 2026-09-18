@@ -131,6 +131,7 @@ export class RenewalsController {
       items: subscriptions.map((subscription) => ({
         id: subscription.id,
         customerId: subscription.customerId,
+        customerName: subscription.customer.companyName ?? subscription.customer.fullName,
         renewsAt: subscription.renewsAt,
         status: subscription.status,
         // The plan's own name, which is WebEdge's. No upstream product is named
