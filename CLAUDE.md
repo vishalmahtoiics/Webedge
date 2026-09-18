@@ -39,6 +39,13 @@ cd frontend && npm install && npm run dev
 `npm test` in `backend/` needs a live migrated database — the isolation and audit tests run against real
 Postgres on purpose, because they assert database-level behaviour that mocks cannot show.
 
+## Deploying it
+
+See `DEPLOY.md`. `backend/` and `frontend/` are separate deployables, the backend's
+container entry point is `npm run start:container` (migrations, then `dist/main.js`),
+and the exposed port must match `PORT`. Never use `npm start` as a container entry
+point: it clears `dist` and recompiles, discarding the image's build on every restart.
+
 ## Non-negotiables
 
 Easy to breach by accident, and each is acceptance-blocking.

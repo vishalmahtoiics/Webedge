@@ -1,0 +1,13 @@
+# The build context is copied twice by Nixpacks, so anything here is copied
+# twice. More importantly, a stale node_modules or dist from a developer's
+# machine would be copied over the image's own, which is how a build that
+# looks clean runs code nobody built.
+node_modules
+dist
+tsconfig.tsbuildinfo
+.env
+.env.*
+!.env.example
+*.log
+coverage
+.nixpacks

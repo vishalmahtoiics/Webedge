@@ -1,0 +1,25 @@
+# Deployment build plan.
+#
+# Without this file the builder chose Node 18, which @nestjs/core 11 does not
+# support — npm printed EBADENGINE for five packages and carried on. The
+# `engines` field in package.json is what most builders read; this pins it
+# explicitly as well, because the two are read by different tools and a
+# deployment that silently drops two major versions of Node is not worth
+# leaving to a default.
+#
+# The start command is `start:container`, not `start`. `start` is a development
+# command: it clears dist and recompiles through the Nest CLI, which would
+# delete the image's build on every container restart and require the dev
+# dependencies to stay installed in production.
+
+[phases.setup]
+nixPkgs = ['nodejs_22', 'openssl']
+
+[phases.install]
+cmds = ['npm ci']
+
+[phases.build]
+cmds = ['npm run build']
+
+[start]
+cmd = 'npm run start:container'

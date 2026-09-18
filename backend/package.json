@@ -1,10 +1,13 @@
 {
   "name": "@webedge/backend",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=22"
+  },
   "private": true,
   "description": "WebEdge Solution backend API",
   "scripts": {
-    "//generate": "Prisma generates its client from an install script, and .npmrc turns install scripts off. Every entry point therefore generates it explicitly — chained with && rather than as a prebuild/pretest hook, because ignore-scripts disables this project's own pre/post hooks too. That is exactly how the first attempt at this failed: 206 type errors, because the client had never been generated.",
+    "//generate": "Prisma generates its client from an install script, and .npmrc turns install scripts off. Every entry point therefore generates it explicitly \u2014 chained with && rather than as a prebuild/pretest hook, because ignore-scripts disables this project's own pre/post hooks too. That is exactly how the first attempt at this failed: 206 type errors, because the client had never been generated.",
     "generate": "prisma generate",
     "//clean": "nest-cli.json sets deleteOutDir, and tsconfig sets incremental. Together they produce a build that exits 0 and emits nothing: Nest removes dist, then tsc reads tsconfig.tsbuildinfo, sees no source file newer than its last emit, and writes no JavaScript. dist ends up holding only the copied assets. Clearing the build info is what makes the two settings safe together, so every entry point that compiles runs this first.",
     "clean": "rm -rf dist tsconfig.tsbuildinfo",
@@ -22,7 +25,9 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "seed": "node --experimental-strip-types prisma/seed.ts",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
+    "//start:container": "The container entry point. Migrations run first because a deploy that starts an application against a schema it does not match fails on the first request instead of at boot, and `prisma migrate deploy` takes an advisory lock, so several replicas starting at once is safe. It runs dist directly: `start` is a development command that clears dist and recompiles, which would throw away the image's build on every restart.",
+    "start:container": "prisma migrate deploy && node dist/main.js"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
