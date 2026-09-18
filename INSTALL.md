@@ -124,6 +124,21 @@ against whatever it fetched when it was queued — not against the latest push.
 Trigger a fresh deploy, and if it still happens, clear the build cache so the
 workspace is re-cloned.
 
+### If `npm run install:wizard` says it cannot find `dist/installer/cli.js`
+
+The file is in `src`, and the build said it succeeded. Both are true: the build
+deleted `dist`, then decided from `tsconfig.tsbuildinfo` that everything was
+already emitted, and wrote nothing.
+
+`npm run build` clears that file itself, so this should not happen. If it does —
+an interrupted build, a `nest build` run by hand — clear it and build again:
+
+```bash
+cd backend && npm run clean && npm run build
+```
+
+`dist` should end up with a few hundred files, not one.
+
 ## What the installer does not do
 
 - **Install dependencies.** `npm ci` is the step before it, from your shell. An

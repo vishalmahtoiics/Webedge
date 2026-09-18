@@ -156,6 +156,21 @@ Changing these needs a reason, not a preference.
   `npm ci` ever starts running `node-gyp`, that is a regression, not a toolchain to install.
   `test/native-dependencies.spec.ts` enforces it, and distinguishes a blocking package from an optional one:
   `cpu-features` fails loudly under ssh2 and npm carries on, so that noise in a build log is expected.
+- **No package may run code at install time.** `backend/.npmrc` sets `ignore-scripts`. An install script is
+  arbitrary code from a package author, running with the deploying account's privileges before anything is
+  reviewed — and it is also what resurrects a removed native dependency from a stale `node_modules` on a
+  build host. The cost is that Prisma generates its client from an install script, so every entry point runs
+  `prisma generate` explicitly. Chain it with `&&` inside the script body, never as a `prebuild` hook:
+  `ignore-scripts` disables this project's own pre/post hooks too, which is how the first attempt produced a
+  build with 206 type errors against a client that had never been generated.
+- **Anything that compiles clears `tsconfig.tsbuildinfo` first.** `nest-cli.json` deletes `dist` and
+  `tsconfig.json` is incremental; nothing tells tsc its output was deleted. Build twice without editing a
+  source file and the second build removes `dist`, reads build info describing files that no longer exist,
+  emits nothing, and exits 0 — leaving a `dist` holding only the copied assets. `npm run install:wizard` then
+  fails with `MODULE_NOT_FOUND` for `dist/installer/cli.js`, naming a file that is plainly there in `src`.
+  A build that reports success and produces nothing is worse than one that fails, so `npm run clean` runs
+  before every compiler invocation and a test enforces it over the configuration rather than over today's
+  scripts.
 - **One module owns password hashing.** `common/password-hashing.ts`. Four files used to import an argon2
   library directly and restate the cost parameters, which is why replacing it was a four-file change.
   Swapping a hashing library is only safe if hashes already in the database still verify and Dovecot still
@@ -200,6 +215,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/billing/billing-period.spec.ts` | Renewal dates clamp at month ends and never drift off the anniversary |
 | `src/mail/mail-password.spec.ts` | A real `doveadm` accepts the hashes WebEdge writes, and rejects wrong or truncated passwords |
 | `src/mail/mail-address.spec.ts` | Local parts that would traverse a maildir path are refused, and addresses compare case-insensitively |
+| `test/build-output.spec.ts` | No script can run the compiler over stale build info, so a build cannot succeed and emit nothing |
 | `test/native-dependencies.spec.ts` | No package npm cannot skip requires a compiler, so installing needs no toolchain |
 | `src/common/password-hashing.spec.ts` | Hashes written by other argon2 implementations still verify, so the library can be replaced without locking anyone out |
 | `src/installer/env-file.spec.ts` | Every generated `.env` value round-trips through the real dotenv, and a newline cannot become a setting |
