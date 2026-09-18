@@ -87,6 +87,15 @@ describe('activity trail reads', () => {
       newValue: { invoiceNumber: 'WEB/2099-00/00001' },
     });
 
+    // A scheduled action on A's account, which no person performed. The
+    // renewal sweep writes rows exactly like this one.
+    await write.record(undefined, {
+      action: 'billing.subscription.renewed',
+      customerId: a.id,
+      visibility: 'CUSTOMER',
+      newValue: { invoiceNumber: 'WEB/2099-00/00003' },
+    });
+
     // Internal detail about A, which A must not see.
     await write.record(staff, {
       action: 'admin.customer.status_changed',
@@ -158,6 +167,21 @@ describe('activity trail reads', () => {
       expect(own?.actor).toBe(principalA.email);
       expect(byStaff?.actor).toBe('WebEdge support');
       expect(JSON.stringify(items)).not.toContain(staff.email);
+    });
+
+    /**
+     * A renewal the sweep performed has no actor at all, and must not borrow
+     * the staff label. "WebEdge support" tells the customer a person opened
+     * their account and acted on it — which is the first thing they ask when a
+     * charge is unexpected, and it would be false.
+     */
+    it('names a scheduled action as automatic rather than as support', async () => {
+      const { items } = await read.listForCustomer(principalA, { take: 100 });
+
+      const swept = items.find((i) => i.action === 'billing.subscription.renewed');
+
+      expect(swept?.actor).toBe('WebEdge (automatic)');
+      expect(swept?.actor).not.toBe('WebEdge support');
     });
 
     it('caps the page size', async () => {
