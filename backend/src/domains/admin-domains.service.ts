@@ -26,6 +26,10 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export type AdminDomainRow = {
   name: string;
+  /** The sold row, when there is one. Null for a domain nobody has been sold. */
+  domainId: string | null;
+  /** The discovered row, when a sync found it. What an assignment acts on. */
+  discoveredId: string | null;
   /** Where WebEdge knows this from. Both means sold and present upstream. */
   origin: 'sold' | 'on-account' | 'both';
   status: string | null;
@@ -76,6 +80,7 @@ export class AdminDomainsService {
       this.prisma.domain.findMany({
         where: soldWhere,
         select: {
+          id: true,
           name: true,
           status: true,
           expiresAt: true,
@@ -87,6 +92,7 @@ export class AdminDomainsService {
       this.prisma.discoveredResource.findMany({
         where: foundWhere,
         select: {
+          id: true,
           name: true,
           status: true,
           expiresAt: true,
@@ -102,6 +108,8 @@ export class AdminDomainsService {
     for (const domain of sold) {
       rows.set(domain.name.toLowerCase(), {
         name: domain.name,
+        domainId: domain.id,
+        discoveredId: null,
         origin: 'sold',
         status: domain.status,
         expiresAt: domain.expiresAt,
@@ -126,6 +134,7 @@ export class AdminDomainsService {
 
       if (existing) {
         existing.origin = 'both';
+        existing.discoveredId = resource.id;
         existing.account = resource.hostingAccount
           ? { id: resource.hostingAccount.id, name: resource.hostingAccount.accountName }
           : null;
@@ -139,6 +148,8 @@ export class AdminDomainsService {
 
       rows.set(key, {
         name: resource.name,
+        domainId: null,
+        discoveredId: resource.id,
         origin: 'on-account',
         status: resource.status,
         expiresAt: resource.expiresAt,

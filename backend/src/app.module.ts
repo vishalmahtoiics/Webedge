@@ -7,6 +7,7 @@ import { ProvidersModule } from './providers/providers.module';
 import { CustomersModule } from './customers/customers.module';
 import { DnsModule } from './dns/dns.module';
 import { DomainsModule } from './domains/domains.module';
+import { HostingModule } from './hosting/hosting.module';
 import { FilesModule } from './files/files.module';
 import { ChecksModule } from './checks/checks.module';
 import { BillingModule } from './billing/billing.module';
@@ -25,6 +26,7 @@ import { AppExceptionFilter } from './common/filters/app-exception.filter';
     CustomersModule,
     DnsModule,
     DomainsModule,
+    HostingModule,
     FilesModule,
     ChecksModule,
     BillingModule,
