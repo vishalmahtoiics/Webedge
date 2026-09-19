@@ -185,6 +185,18 @@ Changing these needs a reason, not a preference.
   it on every request; anyone who can read it already has the server. Afterwards the token is deleted and an
   install lock is written, and every setup route answers 409. Re-opening it takes `rm` on the lock from a
   shell — a button for that is a button that repoints the database and creates an administrator.
+- **Provider endpoints are verified against the provider's own MCP package, and the source is recorded.**
+  `docs/provider-api.md` holds the index, read from `hostinger-api-mcp` on npm — that package carries the
+  method and path of every endpoint it exposes, which is a stronger source than prose and a far stronger one
+  than memory. It earned its place immediately: of four probe paths written from the published reference,
+  `/api/dns/v1/zones` did not exist. Every DNS read is `/api/dns/v1/zones/{domain}`, so that probe would have
+  returned 404 forever and reported "this token cannot reach DNS" — a false statement about a customer's
+  account, which is worse than a missing feature. DNS is absent from the probe list rather than approximated.
+- **A connection test is every GET and no writes.** That is what makes it safe to run against a live account
+  under the rule that nothing outside production is written unless its name starts with `wetest-`. It reports
+  per product area, because a token inherits the permissions of whoever created it and reaching domains but
+  not VPS is ordinary. An unrecognised response shape yields an unknown count, never zero: "0 records" reads
+  as "your account is empty" and is indistinguishable from "we could not read the answer".
 - **No dependency may require a compiler.** Every package must ship a prebuilt binary or be pure
   JavaScript, and the binary must load on Enterprise Linux 8 (glibc 2.28), which is what most managed hosting
   runs. `argon2` failed this: its prebuild needs GLIBC_2.34, so it fell back to compiling, and node-gyp's
@@ -242,6 +254,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `test/route-authorization.e2e-spec.ts` | Walks the real router; fails the build on any route without a permission declaration |
 | `test/activity-log-durability.spec.ts` | The trail survives account deletion, redacts secrets, and cannot be rewritten |
 | `test/activity-read.spec.ts` | A customer's trail excludes internal rows, other tenants and staff identities; the two staff trails partition the table with nothing in both |
+| `src/providers/hostinger-client.spec.ts` | An API token never reaches an error message, a log or the audit trail, and an unreadable response is counted as unknown rather than zero |
 | `src/providers/credential-cipher.service.spec.ts` | Tampered ciphertext, tags and IVs are all rejected |
 | `src/rbac/permissions.catalog.spec.ts` | No role is composed from another realm's keys |
 | `test/sftp-file-transport.spec.ts` | A symlink inside the website cannot be used to read, write or delete outside it |

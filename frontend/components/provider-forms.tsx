@@ -278,3 +278,90 @@ export function AddCredentialForm({
     </form>
   );
 }
+
+
+/**
+ * Asks the provider whether this account's token works, and shows what it
+ * reached.
+ *
+ * Per product area, because a token inherits the permissions of the person who
+ * created it: reaching domains but not VPS is the ordinary case, not a fault.
+ * The provider's own words are shown on a failure — for a wrong scope they are
+ * the most useful sentence on the page, and they are safe to render because the
+ * token travelled in a header the provider never echoes back.
+ */
+export function VerifyButton({
+  accountId,
+  hasCredential,
+  action,
+}: {
+  accountId: string;
+  hasCredential: boolean;
+  action: (accountId: string) => Promise<
+    | {
+        ok: true;
+        usable: boolean;
+        areas: Array<{ area: string; status: number | null; ok: boolean; count: number | null; detail?: string }>;
+      }
+    | { ok: false; message: string }
+  >;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [report, setReport] = useState<Awaited<ReturnType<typeof action>> | null>(null);
+
+  if (!hasCredential) return null;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setReport(null);
+          startTransition(async () => setReport(await action(accountId)));
+        }}
+        className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-ink disabled:opacity-50"
+      >
+        {pending ? 'Testing…' : 'Test connection'}
+      </button>
+
+      {report === null ? null : !report.ok ? (
+        <p role="alert" className="mt-2 rounded-lg border border-state-danger/30 bg-state-danger/5 p-3 text-sm text-state-danger">
+          {report.message}
+        </p>
+      ) : (
+        <div
+          className={`mt-2 rounded-lg border p-3 text-sm ${
+            report.usable
+              ? 'border-state-success/30 bg-state-success/5'
+              : 'border-state-danger/30 bg-state-danger/5'
+          }`}
+        >
+          <p className="font-medium">
+            {report.usable
+              ? 'The token works.'
+              : 'The provider accepted nothing this token asked for.'}
+          </p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {report.areas.map((area) => (
+              <li key={area.area} className="flex flex-wrap items-baseline gap-2">
+                <span className="w-20 shrink-0 text-ink-muted">{area.area}</span>
+                <span className={area.ok ? 'text-state-success' : 'text-state-danger'}>
+                  {area.ok ? '✓' : '✕'} {area.status ?? 'no answer'}
+                </span>
+                {/* A count only when the provider gave a countable list. An
+                    absent count is left absent rather than shown as zero. */}
+                {area.ok && area.count !== null ? (
+                  <span className="text-ink-muted">
+                    {area.count} {area.count === 1 ? 'record' : 'records'}
+                  </span>
+                ) : null}
+                {area.detail ? <span className="text-ink-muted">{area.detail}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}

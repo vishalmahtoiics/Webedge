@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post } from '@nestjs/common';
 import { Realm } from '@prisma/client';
 import { ProviderAccountsService } from './provider-accounts.service';
+import { ProviderVerificationService } from './provider-verification.service';
 import { AddCredentialDto, CreateProviderAccountDto, SetStatusDto } from './dto/provider.dto';
 import { CurrentUser, RequirePermissions, RequireRealm } from '../common/decorators/auth.decorators';
 import type { Principal } from '../common/principal';
@@ -16,7 +17,10 @@ import type { Principal } from '../common/principal';
 @Controller('admin/providers')
 @RequireRealm(Realm.ADMIN)
 export class ProviderAccountsController {
-  constructor(private readonly accounts: ProviderAccountsService) {}
+  constructor(
+    private readonly accounts: ProviderAccountsService,
+    private readonly verification: ProviderVerificationService,
+  ) {}
 
   @Get()
   @RequirePermissions('admin.providers')
@@ -45,6 +49,19 @@ export class ProviderAccountsController {
     @Body() dto: SetStatusDto,
   ): Promise<void> {
     await this.accounts.setStatus(principal, id, dto.status);
+  }
+
+  /**
+   * Asks the provider whether the account's current token works.
+   *
+   * Read-only, so it is safe against a live account — but it spends the
+   * account's request budget and reveals which products the token reaches, so
+   * it sits behind the credentials permission rather than the viewing one.
+   */
+  @Post(':id/verify')
+  @RequirePermissions('admin.providers.credentials')
+  verify(@CurrentUser() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
+    return this.verification.verify(principal, id);
   }
 
   @Post(':id/credentials')

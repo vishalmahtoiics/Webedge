@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation';
 import { apiAuthed } from '@/lib/api';
 import { AdminShell } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
-import { AddAccountForm, AddCredentialForm } from '@/components/provider-forms';
+import { AddAccountForm, AddCredentialForm, VerifyButton } from '@/components/provider-forms';
 
 /**
  * Provider accounts.
@@ -68,6 +68,23 @@ export default async function AdminProvidersPage() {
     if (!created.ok) return { ok: false as const, message: created.error.message };
     revalidatePath('/admin/providers');
     return { ok: true as const };
+  }
+
+  /**
+   * Read-only: every call the verification makes is a GET, which is what makes
+   * it safe against a live account. It costs the account's request budget, so
+   * it is a deliberate press rather than something a page load does.
+   */
+  async function verifyAccount(accountId: string) {
+    'use server';
+    const result = await apiAuthed<{
+      usable: boolean;
+      areas: Array<{ area: string; status: number | null; ok: boolean; count: number | null; detail?: string }>;
+    }>('admin', `/admin/providers/${accountId}/verify`, { method: 'POST' });
+
+    if (!result.ok) return { ok: false as const, message: result.error.message };
+    revalidatePath('/admin/providers');
+    return { ok: true as const, usable: result.data.usable, areas: result.data.areas };
   }
 
   /**
@@ -184,6 +201,12 @@ export default async function AdminProvidersPage() {
                     )}
                   </dd>
                 </dl>
+
+                <VerifyButton
+                  accountId={account.id}
+                  hasCredential={active.length > 0}
+                  action={verifyAccount}
+                />
 
                 <AddCredentialForm
                   accountId={account.id}
