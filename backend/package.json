@@ -25,6 +25,8 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "seed": "node --experimental-strip-types prisma/seed.ts",
+    "//admin:password": "Sets a new password for a staff account, printed once. The seed shows the generated password exactly once and the stored form is a one-way hash, so without this a missed line in a deploy log locks everyone out of the panel permanently. A shell on the server is the authentication, as it is for the setup wizard; there is deliberately no HTTP route.",
+    "admin:password": "node --experimental-strip-types prisma/admin-password.ts",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.scripts.json",
     "//start:container": "The container entry point. Migrations run first because a deploy that starts an application against a schema it does not match fails on the first request instead of at boot, and `prisma migrate deploy` takes an advisory lock, so several replicas starting at once is safe. It runs dist directly: `start` is a development command that clears dist and recompiles, which would throw away the image's build on every restart.",
     "start:container": "prisma migrate deploy && node dist/main.js"

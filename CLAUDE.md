@@ -274,6 +274,15 @@ Changing these needs a reason, not a preference.
 - **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
   is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
   takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
+- **A staff password is reset from a shell, never over HTTP.** The seed prints the generated password once
+  and stores only an argon2id hash, so a missed line in a deploy log used to mean nobody could ever sign in
+  again — re-running the seed finds the account, says "password unchanged" and prints nothing.
+  `npm run admin:password` closes that, and is a script rather than a route because an endpoint that resets
+  the administrator is a takeover button with a form in front of it. A shell on the server is the
+  authentication, the same reasoning as the setup wizard: whoever can run it already has the machine. The
+  new password is generated rather than taken as an argument, because an argument is visible in `ps` to
+  every user on the box and lands in the shell history file. Clearing `failedLoginCount` and `lockedUntil`
+  is part of the reset: a locked-out account that stays locked reads as "the new password is wrong too".
 - **A session cookie's `Secure` flag comes from `x-forwarded-proto`, not from `NODE_ENV`.** `NODE_ENV=production`
   means an optimised build; the builder sets it whether or not a certificate is in front of the app, so it is
   not a statement about the scheme the browser used. Getting it wrong is expensive out of proportion, because

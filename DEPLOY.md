@@ -44,6 +44,33 @@ npm run seed
 
 It prints the administrator's password **once**. Copy it immediately.
 
+The email is `admin@webedgesolution.com` unless you set `SEED_ADMIN_EMAIL`. If
+you set `SEED_ADMIN_PASSWORD` yourself, the seed uses it and prints nothing —
+you already know it. Leave it unset and the seed generates one and prints it.
+
+### If you lost the administrator's password
+
+It cannot be recovered. It is stored as an argon2id hash, which is one-way by
+design, so nothing in this codebase and nobody with database access can read it
+back. Re-running the seed does not help either: it finds the account, reports
+`password unchanged`, and prints nothing.
+
+Search the deploy log of the run where you first ran the seed for
+`Super admin created` — that is the only place the generated password ever
+appeared. If it has rolled out of the log, set a new one from the container's
+terminal:
+
+```bash
+npm run admin:password -- admin@webedgesolution.com
+```
+
+Run it with no address to list the staff accounts. It prints a new generated
+password once, clears any lockout on the account, and leaves everything else
+alone. There is deliberately no HTTP route for this: a page that resets the
+administrator is a takeover button with a friendly form in front of it. A shell
+on the server is the authentication, exactly as it is for the setup wizard —
+anyone who can run it already has the machine.
+
 ### Then
 
 `https://<your-domain>/admin/login` is the staff portal and
