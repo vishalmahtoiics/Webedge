@@ -208,6 +208,43 @@ describe('provider sync', () => {
       expect(domains?.payloadKeys).toContain('libelle');
     });
 
+    /**
+     * The case the live account surfaced: every website came back with a name
+     * and none with a status, because the provider's key for it is not one this
+     * mapping knows. A field that no record resolved is a gap in the candidate
+     * list, not in the account — and without saying so it renders as a column
+     * blank everywhere, which reads as the provider having nothing to say.
+     */
+    it('reports a field no record resolved, with the keys to fix it', async () => {
+      stubProvider([
+        { id: 'w1', domain: 'one.test', lifecycle: 'running' },
+        { id: 'w2', domain: 'two.test', lifecycle: 'running' },
+      ]);
+
+      const report = await sync.sync(principal, accountId);
+      const domains = report.sources.find((source) => source.area === 'domains');
+
+      // Names read fine, so nothing is "unnamed" — the older signal misses this.
+      expect(domains?.unnamed).toBe(0);
+      expect(domains?.stored).toBe(2);
+
+      expect(domains?.unresolved).toContain('status');
+      expect(domains?.unresolved).toContain('expiresAt');
+      expect(domains?.unresolved).not.toContain('name');
+      // And the fix is handed over rather than guessed at twice.
+      expect(domains?.payloadKeys).toContain('lifecycle');
+    });
+
+    /** Nothing stored means nothing to have resolved. Not a mapping gap. */
+    it('does not call fields unresolved when nothing was stored', async () => {
+      stubProvider([]);
+
+      const report = await sync.sync(principal, accountId);
+
+      expect(report.sources[0]?.unresolved).toEqual([]);
+      expect(report.sources[0]?.payloadKeys).toBeUndefined();
+    });
+
     /** No stable key means no row: it would duplicate on every sync. */
     it('skips a record it could not key, and counts it', async () => {
       stubProvider([{ colour: 'blue' }, { id: 'ok1', domain: 'fine.test' }]);

@@ -401,6 +401,7 @@ export function SyncButton({
           stored: number;
           skipped: number;
           unnamed: number;
+          unresolved: string[];
           payloadKeys?: string[];
           detail?: string;
         }>;
@@ -456,6 +457,15 @@ export function SyncButton({
                 {source.unnamed > 0 ? (
                   <span className="text-state-warning">· {source.unnamed} unnamed</span>
                 ) : null}
+                {/* A field no record resolved is a gap in the mapping, not in
+                    the account. Without saying so it shows as a column that is
+                    blank everywhere, which reads as the provider having nothing
+                    to say about it. */}
+                {source.unresolved.length > 0 ? (
+                  <span className="text-state-warning">
+                    · no {source.unresolved.join(', ')} found
+                  </span>
+                ) : null}
                 {source.detail ? <span className="text-ink-muted">· {source.detail}</span> : null}
               </li>
             ))}
@@ -463,11 +473,12 @@ export function SyncButton({
 
           {report.sources.some((source) => source.payloadKeys?.length) ? (
             <div className="mt-3 rounded-lg border border-state-warning/30 bg-state-warning/5 p-3">
-              <p className="font-medium">Some records could not be read fully.</p>
+              <p className="font-medium">Some fields could not be read.</p>
               <p className="mt-1 text-ink-muted">
                 The provider publishes no response shapes, so WebEdge matches its fields by name.
                 These are the keys it actually sent — they are what the mapping should be corrected
-                against:
+                against. Nothing is lost: the payloads are stored, so a corrected mapping applies to
+                them without syncing again.
               </p>
               <ul className="mt-2 flex flex-col gap-1 font-mono text-xs">
                 {report.sources

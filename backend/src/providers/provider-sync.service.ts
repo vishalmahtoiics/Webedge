@@ -49,7 +49,17 @@ export type SyncedSource = {
   skipped: number;
   /** Stored rows whose name could not be resolved. */
   unnamed: number;
-  /** The payload's own keys, present when nothing mapped — so it can be fixed. */
+  /**
+   * Target fields no row in this source resolved.
+   *
+   * A field missing from one record is that record's gap; a field missing from
+   * every record means the candidate key list does not cover this product. The
+   * second is a mapping defect and needs to be visible as one — the symptom
+   * otherwise is a column that is simply blank everywhere, which reads as the
+   * provider having nothing to say.
+   */
+  unresolved: string[];
+  /** The payload's own keys, present whenever something went unresolved. */
   payloadKeys?: string[];
   detail?: string;
 };
@@ -137,6 +147,7 @@ export class ProviderSyncService {
         stored: 0,
         skipped: 0,
         unnamed: 0,
+        unresolved: [],
         detail: outcome.detail,
       };
     }
@@ -156,6 +167,7 @@ export class ProviderSyncService {
         stored: 0,
         skipped: 0,
         unnamed: 0,
+        unresolved: [],
         detail: 'The provider answered, but nothing list-shaped was found in the response.',
       };
     }
@@ -163,6 +175,8 @@ export class ProviderSyncService {
     let stored = 0;
     let skipped = 0;
     let unnamed = 0;
+    /** Fields resolved by at least one record in this source. */
+    const resolvedSomewhere = new Set<string>();
 
     for (const row of rows) {
       const mapped = mapResource(row);
@@ -173,6 +187,7 @@ export class ProviderSyncService {
         continue;
       }
       if (mapped.name === null) unnamed += 1;
+      for (const field of mapped.mapped) resolvedSomewhere.add(field);
 
       await this.prisma.discoveredResource.upsert({
         where: {
@@ -207,6 +222,13 @@ export class ProviderSyncService {
       stored += 1;
     }
 
+    // Only meaningful when something was stored: nothing resolved out of
+    // nothing is not a mapping gap.
+    const unresolved =
+      stored > 0
+        ? ['name', 'status', 'expiresAt'].filter((field) => !resolvedSomewhere.has(field))
+        : [];
+
     return {
       area: source.area,
       kind: source.kind,
@@ -216,10 +238,14 @@ export class ProviderSyncService {
       stored,
       skipped,
       unnamed,
-      // Shown only when the mapping struggled, and then it is the fix: the
-      // provider's own key names, so the candidate list can be corrected
-      // instead of guessed at a second time.
-      payloadKeys: unnamed > 0 || skipped > 0 ? keysOf(rows) : undefined,
+      unresolved,
+      // The fix, handed over: the provider's own key names, so the candidate
+      // list is corrected against what was actually sent rather than guessed
+      // at a second time. Shown whenever anything went unread — including a
+      // field that no record resolved, which is the case a count of unnamed
+      // rows alone does not catch.
+      payloadKeys:
+        unnamed > 0 || skipped > 0 || unresolved.length > 0 ? keysOf(rows) : undefined,
     };
   }
 

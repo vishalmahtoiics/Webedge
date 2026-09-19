@@ -119,6 +119,7 @@ export default async function AdminProvidersPage() {
         stored: number;
         skipped: number;
         unnamed: number;
+        unresolved: string[];
         payloadKeys?: string[];
         detail?: string;
       }>;
@@ -250,26 +251,44 @@ export default async function AdminProvidersPage() {
                       On this account · {account.discovered.length}{' '}
                       {account.discovered.length === 1 ? 'resource' : 'resources'}
                     </p>
-                    <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
-                      {account.discovered.map((resource) => (
-                        <li key={resource.id} className="flex items-baseline gap-2">
-                          <span className="w-24 shrink-0 text-xs uppercase tracking-wide text-ink-muted">
-                            {resource.kind.toLowerCase()}
-                          </span>
-                          {/* A resource whose name could not be read says so.
-                              Rendering its id in a name's place would read as a
-                              name and be believed. */}
-                          {resource.name === null ? (
-                            <span className="text-state-warning">Name not available</span>
-                          ) : (
-                            <span>{resource.name}</span>
-                          )}
-                          {resource.status ? (
-                            <span className="text-xs text-ink-muted">{resource.status}</span>
-                          ) : null}
-                        </li>
-                      ))}
-                    </ul>
+                    {/* Grouped by kind. A flat list of nineteen, in which three
+                        subscriptions are all called ".COM Domain", is a list
+                        nobody reads to the end. */}
+                    <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      {['DOMAIN', 'WEBSITE', 'VPS', 'SUBSCRIPTION']
+                        .map((kind) => ({
+                          kind,
+                          items: account.discovered.filter((r) => r.kind === kind),
+                        }))
+                        .filter((group) => group.items.length > 0)
+                        .map((group) => (
+                          <div key={group.kind}>
+                            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+                              {group.kind.toLowerCase()}
+                              {group.items.length > 1 ? 's' : ''} · {group.items.length}
+                            </p>
+                            <ul className="mt-1 flex flex-col gap-1 text-sm">
+                              {group.items.map((resource) => (
+                                <li key={resource.id} className="flex items-baseline gap-2">
+                                  {/* A resource whose name could not be read says
+                                      so. Rendering its id in a name's place would
+                                      read as a name and be believed. */}
+                                  {resource.name === null ? (
+                                    <span className="text-state-warning">Name not available</span>
+                                  ) : (
+                                    <span className="truncate">{resource.name}</span>
+                                  )}
+                                  {resource.status ? (
+                                    <span className="shrink-0 text-xs text-ink-muted">
+                                      {resource.status}
+                                    </span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                    </div>
                   </div>
                 ) : null}
 
