@@ -171,11 +171,28 @@ not matching `PORT`.
 
 ### Sign-in over plain HTTP
 
-Session cookies are `secure` when `NODE_ENV` is `production`, which the builder
-sets. A browser silently discards those over plain HTTP: sign-in appears to
-succeed and returns to the login page with no error anywhere. Browsers treat
-`*.localhost` as a secure context so a local demo may work, but anything on a
-real domain needs HTTPS.
+This works, and needs no setting. The portal takes the `Secure` flag on its
+session cookies from `x-forwarded-proto` — what the reverse proxy in front of
+it says about the scheme the browser used — deciding it per request. Over TLS
+the cookies are `Secure`; over plain HTTP they are not, because a browser
+*silently discards* a `Secure` cookie set over plain HTTP and the result is a
+sign-in that appears to succeed, returns to the login page, and reports nothing
+anywhere. That was a real day lost, and the password was correct the whole time.
+
+Not carrying `Secure` on a plain-HTTP response is not a downgrade: the browser
+would have thrown the cookie away, so the flag protected nothing and only cost
+the sign-in. What protects the session is the certificate, not the flag. Put
+one in front of anything that is not a local demo — over plain HTTP the refresh
+token crosses the network in clear text and anyone on the path can take the
+session.
+
+`COOKIE_SECURE` in the API's environment does **not** control this, and setting
+it to `false` will not make an HTTPS deployment behave — it only stops the API
+booting in production. Leave it alone.
+
+If sign-in still returns to the login page over HTTPS, the proxy is not sending
+`x-forwarded-proto`. Traefik, nginx and Caddy all send it by default; check
+there before changing anything in the application.
 
 ## The domain
 

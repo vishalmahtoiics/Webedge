@@ -274,6 +274,17 @@ Changing these needs a reason, not a preference.
 - **An issued invoice has no edit or delete route.** Both would break the serial sequence, and a gap in it
   is what an auditor asks about. Correction is void — which keeps the number — plus a credit note, which
   takes its own number from the same sequence and records the invoice it revises, per Rule 53(1A).
+- **A session cookie's `Secure` flag comes from `x-forwarded-proto`, not from `NODE_ENV`.** `NODE_ENV=production`
+  means an optimised build; the builder sets it whether or not a certificate is in front of the app, so it is
+  not a statement about the scheme the browser used. Getting it wrong is expensive out of proportion, because
+  a browser discards a `Secure` cookie set over plain HTTP *silently*: the sign-in POST returns 200, the
+  redirect to the dashboard runs, the dashboard finds no session and bounces back to the login page, and
+  nothing anywhere reports a failure. The symptom is "my password does not work" while the password is
+  correct and the API is accepting it one layer down. Setting the flag there is not the cautious choice — the
+  cookie is gone either way, so it buys nothing and costs the sign-in. Only the reverse proxy knows the
+  scheme, since the application is always spoken to over plain HTTP from behind it; with no proxy there is no
+  header and the old `NODE_ENV` reading stands. A forged header downgrades only the forger's own session.
+  The API's `COOKIE_SECURE` does not control this and never did — the API sets no cookies.
 - **GST is computed in integer paise, per line, and rounded half away from zero.** Floats lose paise; taxing
   the invoice total diverges from taxing lines the moment rates differ; and `Math.round` turns -0.5 into -0,
   so a credit note would not exactly reverse its invoice.
@@ -299,6 +310,7 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `src/rbac/permissions.catalog.spec.ts` | No role is composed from another realm's keys |
 | `test/sftp-file-transport.spec.ts` | A symlink inside the website cannot be used to read, write or delete outside it |
 
+| `test/portal-cookie-security.spec.ts` | A session cookie is `Secure` over TLS and storable over plain HTTP, so a correct password never fails silently |
 | `src/billing/gst.spec.ts` | Tax splits, rounding and credit notes reconcile exactly |
 | `src/checks/ssrf-guard.spec.ts` | Outbound checks cannot be pointed at internal or metadata addresses |
 | `test/invoice-numbering.spec.ts` | Concurrent invoices get distinct, consecutive numbers with no gaps, and a credit note is identifiable as one |

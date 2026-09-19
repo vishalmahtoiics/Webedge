@@ -62,7 +62,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   }
 
   if (parsed.data.NODE_ENV === 'production' && !parsed.data.COOKIE_SECURE) {
-    throw new Error('COOKIE_SECURE must be true in production: __Host- cookies require Secure.');
+    throw new Error(
+      'COOKIE_SECURE must be true in production. Setting it to false does not make ' +
+        'a plain-HTTP deployment work: the portal decides the Secure flag from the ' +
+        "scheme the proxy reports in x-forwarded-proto, not from this. Put a " +
+        'certificate in front of the application instead.',
+    );
   }
 
   cached = parsed.data;

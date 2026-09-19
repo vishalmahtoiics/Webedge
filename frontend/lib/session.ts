@@ -1,5 +1,6 @@
 import 'server-only';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { secureForProto } from './cookie-security';
 
 /**
  * Session tokens live in httpOnly cookies set by this app's own route handlers,
@@ -18,20 +19,22 @@ const NAMES: Record<Realm, { access: string; refresh: string }> = {
   admin: { access: 'we_a_at', refresh: 'we_a_rt' },
 };
 
-const isProduction = process.env.NODE_ENV === 'production';
-
 /**
- * `secure` is required for the __Host- prefix and for any cookie worth trusting,
- * but it breaks plain-HTTP local development, so it follows the environment.
- * `sameSite: 'lax'` keeps the cookie off cross-site POSTs while still surviving
- * top-level navigation back into the portal.
+ * `secure` is decided from the scheme the browser actually used, which only
+ * the proxy in front of this application knows — see `cookie-security.ts` for
+ * why it is read per request and not from `NODE_ENV`. `sameSite: 'lax'` keeps
+ * the cookie off cross-site POSTs while still surviving top-level navigation
+ * back into the portal.
  */
-const baseCookieOptions = {
-  httpOnly: true,
-  secure: isProduction,
-  sameSite: 'lax',
-  path: '/',
-} as const;
+async function baseCookieOptions() {
+  const requestHeaders = await headers();
+  return {
+    httpOnly: true,
+    secure: secureForProto(requestHeaders.get('x-forwarded-proto')),
+    sameSite: 'lax',
+    path: '/',
+  } as const;
+}
 
 export type SessionTokens = {
   accessToken: string;
@@ -41,13 +44,14 @@ export type SessionTokens = {
 export async function setSession(realm: Realm, tokens: SessionTokens): Promise<void> {
   const jar = await cookies();
   const names = NAMES[realm];
+  const options = await baseCookieOptions();
 
   // The access cookie deliberately has no maxAge: it is a session cookie, and
   // the refresh cookie is what survives a browser restart.
-  jar.set(names.access, tokens.accessToken, baseCookieOptions);
+  jar.set(names.access, tokens.accessToken, options);
 
   jar.set(names.refresh, tokens.refreshToken, {
-    ...baseCookieOptions,
+    ...options,
     // Staff sessions are far shorter-lived than customer sessions, matching the
     // backend's own refresh-token lifetimes.
     maxAge: realm === 'admin' ? 12 * 60 * 60 : 30 * 24 * 60 * 60,
