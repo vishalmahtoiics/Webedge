@@ -60,3 +60,20 @@ export class ListCustomersQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   take?: number;
 }
+
+export class AddCustomerUserDto {
+  @IsString() @MinLength(2) @MaxLength(120)
+  fullName!: string;
+
+  @IsEmail() @MaxLength(254)
+  email!: string;
+
+  /** Left empty, one is generated and shown once. */
+  @IsOptional() @IsString() @MinLength(12) @MaxLength(512)
+  password?: string;
+}
+
+export class SetUserStatusDto {
+  @IsIn(['ACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION', 'TERMINATED'])
+  status!: AccountStatus;
+}

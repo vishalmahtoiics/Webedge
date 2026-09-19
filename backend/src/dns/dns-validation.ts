@@ -90,6 +90,30 @@ function isValidIPv6(value: string): boolean {
   return doubleColons === 1 ? groups.length < 8 : groups.length === 8;
 }
 
+/**
+ * Whether a string is a registrable domain name.
+ *
+ * Stricter than a record name: no `@`, no underscore labels, no trailing dot,
+ * and at least two labels — `localhost` is a hostname and not a domain someone
+ * can be sold. It lives here so the DNS rules and the domain form share one
+ * definition; a second regex elsewhere drifts from this one and then the two
+ * disagree about what the panel will accept.
+ */
+export function isValidDomainName(name: string): boolean {
+  const trimmed = name.trim().toLowerCase();
+  if (trimmed.length === 0 || trimmed.length > 253) return false;
+  if (trimmed.endsWith('.')) return false;
+
+  const labels = trimmed.split('.');
+  if (labels.length < 2) return false;
+
+  // The last label is the public suffix and is never numeric — that is an IP
+  // address written with dots, not a domain.
+  if (/^\d+$/.test(labels[labels.length - 1] ?? '')) return false;
+
+  return labels.every((label) => LABEL.test(label));
+}
+
 /** Accepts '@' for the apex, plus relative and absolute hostnames. */
 function isValidHostname(value: string, { allowApex = false } = {}): boolean {
   if (allowApex && value === '@') return true;

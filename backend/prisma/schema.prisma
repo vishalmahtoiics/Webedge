@@ -293,6 +293,14 @@ model HostingAccount {
   /// Drives which capability set applies (blueprint §23).
   productFamily String?
 
+  /// Marks an account as safe to write to outside production.
+  ///
+  /// There is no provider sandbox: every call touches a live account. This is
+  /// the deliberate statement that a particular one holds nothing a customer
+  /// would miss, and it is the only thing besides production itself and a
+  /// `wetest-` resource name that lets a write through.
+  isStaging Boolean @default(false)
+
   websiteSlotsTotal Int?
   websiteSlotsUsed  Int       @default(0)
   lastSyncedAt      DateTime?

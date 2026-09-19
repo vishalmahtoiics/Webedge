@@ -178,3 +178,94 @@ export function unavailable(): AppError {
     "We couldn't reach the hosting provider. Try again in a few minutes.",
   );
 }
+
+/** A call that changes something upstream. */
+export type WriteResult<T = unknown> = {
+  ok: boolean;
+  status: number | null;
+  data?: T;
+  /** Present on failure. Never contains the token. */
+  detail?: string;
+};
+
+/**
+ * A request that changes provider state.
+ *
+ * Separate from `probe` on purpose. `probe` exists to be safe to call anywhere
+ * — it is a GET and its result is written to a page and an audit trail — and
+ * widening it to carry a method and a body would put a destructive call behind
+ * a name that reads harmless at every call site.
+ *
+ * Callers must pass the guard before reaching this. It is not enforced here
+ * because this function does not know whose account it is; the services do.
+ */
+export async function write<T = unknown>(
+  token: string,
+  method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<WriteResult<T>> {
+  try {
+    const response = await fetch(`${HOSTINGER_BASE_URL}${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        'User-Agent': 'WebEdge/1.0',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+
+    const text = await response.text();
+    let data: T | undefined;
+    try {
+      data = text ? (JSON.parse(text) as T) : undefined;
+    } catch {
+      data = undefined;
+    }
+
+    if (!response.ok) {
+      return { ok: false, status: response.status, detail: explain(response.status, text) };
+    }
+    return { ok: true, status: response.status, data };
+  } catch (error) {
+    return { ok: false, status: null, detail: networkDetail(error) };
+  }
+}
+
+/**
+ * Reads one resource, for a caller that needs the body rather than a count.
+ *
+ * `probe` answers "does this work" and deliberately returns no payload. This
+ * answers "what is there".
+ */
+export async function read<T = unknown>(token: string, path: string): Promise<WriteResult<T>> {
+  try {
+    const response = await fetch(`${HOSTINGER_BASE_URL}${path}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/json',
+        'User-Agent': 'WebEdge/1.0',
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+
+    const text = await response.text();
+    let data: T | undefined;
+    try {
+      data = text ? (JSON.parse(text) as T) : undefined;
+    } catch {
+      data = undefined;
+    }
+
+    if (!response.ok) {
+      return { ok: false, status: response.status, detail: explain(response.status, text) };
+    }
+    return { ok: true, status: response.status, data };
+  } catch (error) {
+    return { ok: false, status: null, detail: networkDetail(error) };
+  }
+}

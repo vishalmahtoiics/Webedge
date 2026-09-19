@@ -4,6 +4,8 @@ import { CustomersService } from './customers.service';
 import { SubscriptionsService } from '../plans/subscriptions.service';
 import {
   AssignPlanDto, CreateCustomerDto, ListCustomersQueryDto, SetCustomerStatusDto,
+  AddCustomerUserDto,
+  SetUserStatusDto,
 } from './dto/customer.dto';
 import { CurrentUser, RequirePermissions, RequireRealm } from '../common/decorators/auth.decorators';
 import type { Principal } from '../common/principal';
@@ -57,5 +59,35 @@ export class CustomersController {
     @Body() dto: AssignPlanDto,
   ) {
     return this.subscriptions.subscribe(principal, id, dto.planId);
+  }
+
+  /**
+   * Adds another login to this customer.
+   *
+   * The generated password comes back once in the response and is stored only
+   * as a hash. It is deliberately not in the audit trail: `activity_logs` is
+   * append-only, so a credential written there could never be removed.
+   */
+  @Post(':id/users')
+  @RequirePermissions('admin.customers')
+  addUser(
+    @CurrentUser() principal: Principal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddCustomerUserDto,
+  ) {
+    return this.customers.addUser(principal, id, dto);
+  }
+
+  /** Suspends or restores one login. Never a delete — history stays readable. */
+  @Patch(':id/users/:userId/status')
+  @RequirePermissions('admin.customers')
+  @HttpCode(204)
+  async setUserStatus(
+    @CurrentUser() principal: Principal,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('userId', ParseUUIDPipe) userId: string,
+    @Body() dto: SetUserStatusDto,
+  ): Promise<void> {
+    await this.customers.setUserStatus(principal, id, userId, dto.status);
   }
 }

@@ -202,6 +202,109 @@ export class CustomersService {
     return { id: result.customerId, userId: result.userId, temporaryPassword: generated };
   }
 
+  /**
+   * Adds another login to an existing customer.
+   *
+   * A customer is an account; the people who sign in to it are its users, and
+   * there is normally more than one — an owner and whoever actually maintains
+   * the site. Creating the customer makes the first; this makes the rest.
+   *
+   * The generated password is returned once and never stored in readable form.
+   * It is deliberately absent from the audit trail: a trail that records a
+   * password is a trail that hands out credentials to anyone who can read it,
+   * and `activity_logs` is append-only, so it could not be taken back out.
+   */
+  async addUser(
+    principal: Principal,
+    customerId: string,
+    input: { fullName: string; email: string; password?: string },
+  ): Promise<{ id: string; temporaryPassword?: string }> {
+    const email = input.email.toLowerCase().trim();
+
+    const customer = await this.prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { id: true, status: true },
+    });
+    if (!customer) throw notFound('customer');
+
+    // Addresses are unique across every customer, so a second account cannot
+    // be created for someone who already signs in elsewhere — which would give
+    // one person two tenants and no way to tell which they are in.
+    const taken = await this.prisma.customerUser.findUnique({
+      where: { email },
+      select: { id: true },
+    });
+    if (taken) {
+      throw new AppError('CONFLICT', 'Someone already signs in with that email address.');
+    }
+
+    const role = await this.prisma.role.findFirst({
+      where: { realm: Realm.CUSTOMER, name: 'CUSTOMER' },
+    });
+    if (!role) {
+      throw new AppError('OPERATION_FAILED', 'Customer role is missing. Run the seed.');
+    }
+
+    const generated = input.password ? undefined : randomBytes(12).toString('base64url');
+    const user = await this.prisma.customerUser.create({
+      data: {
+        customerId,
+        email,
+        fullName: input.fullName.trim(),
+        passwordHash: await AuthService.hashPassword(input.password ?? generated!),
+        roleId: role.id,
+        status: AccountStatus.ACTIVE,
+        emailVerifiedAt: new Date(),
+      },
+      select: { id: true },
+    });
+
+    await this.activity.record(principal, {
+      action: 'admin.customer_user.created',
+      customerId,
+      resourceType: 'customer_user',
+      resourceId: user.id,
+      visibility: 'CUSTOMER',
+      newValue: { fullName: input.fullName, email },
+    });
+
+    return { id: user.id, temporaryPassword: generated };
+  }
+
+  /**
+   * Suspends or restores one user's ability to sign in.
+   *
+   * Not a delete. Removing the row would take their name off everything they
+   * did, and the trail keeps an `actorEmail` snapshot precisely so history
+   * stays readable — but the live account list should still show who existed.
+   */
+  async setUserStatus(
+    principal: Principal,
+    customerId: string,
+    userId: string,
+    status: AccountStatus,
+  ): Promise<void> {
+    // Scoped on the pair, never on the id alone: a user id from another
+    // customer must not be reachable by guessing.
+    const user = await this.prisma.customerUser.findFirst({
+      where: { id: userId, customerId },
+      select: { id: true, email: true, status: true },
+    });
+    if (!user) throw notFound('user');
+
+    await this.prisma.customerUser.update({ where: { id: userId }, data: { status } });
+
+    await this.activity.record(principal, {
+      action: 'admin.customer_user.status_changed',
+      customerId,
+      resourceType: 'customer_user',
+      resourceId: userId,
+      visibility: 'CUSTOMER',
+      oldValue: { status: user.status },
+      newValue: { status, email: user.email },
+    });
+  }
+
   async setStatus(
     principal: Principal,
     customerId: string,
