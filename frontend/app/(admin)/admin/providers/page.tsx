@@ -1,7 +1,9 @@
+import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
 import { apiAuthed } from '@/lib/api';
 import { AdminShell } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
+import { AddAccountForm, AddCredentialForm } from '@/components/provider-forms';
 
 /**
  * Provider accounts.
@@ -55,6 +57,39 @@ export default async function AdminProvidersPage() {
   const result = await apiAuthed<ProviderAccount[]>('admin', '/admin/providers');
   if (!result.ok && result.error.code === 'UNAUTHENTICATED') redirect('/admin/login');
 
+  async function addAccount(input: {
+    accountName: string;
+    productFamily?: string;
+    websiteSlotsTotal?: number;
+    notes?: string;
+  }) {
+    'use server';
+    const created = await apiAuthed('admin', '/admin/providers', { method: 'POST', body: input });
+    if (!created.ok) return { ok: false as const, message: created.error.message };
+    revalidatePath('/admin/providers');
+    return { ok: true as const };
+  }
+
+  /**
+   * The token crosses the network once, to this server action, and goes
+   * straight to the API. It is never placed in a URL, a log line or a
+   * revalidated payload — so the only copy that outlives the request is the
+   * encrypted one in the database.
+   */
+  async function addCredential(
+    accountId: string,
+    input: { label: string; token: string; expiresAt?: string },
+  ) {
+    'use server';
+    const created = await apiAuthed('admin', `/admin/providers/${accountId}/credentials`, {
+      method: 'POST',
+      body: input,
+    });
+    if (!created.ok) return { ok: false as const, message: created.error.message };
+    revalidatePath('/admin/providers');
+    return { ok: true as const };
+  }
+
   return (
     <AdminShell
       title="Infrastructure"
@@ -68,9 +103,14 @@ export default async function AdminProvidersPage() {
           <p className="mt-1.5 max-w-prose text-sm text-ink-muted">
             Add an account and its API credential to start mapping customer resources onto it.
           </p>
+          <div className="mt-4">
+            <AddAccountForm action={addAccount} />
+          </div>
         </div>
       ) : (
-        <ul className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4">
+          <AddAccountForm action={addAccount} />
+          <ul className="flex flex-col gap-4">
           {result.data.map((account) => {
             const active = account.credentials.filter((c) => !c.revokedAt);
 
@@ -144,10 +184,17 @@ export default async function AdminProvidersPage() {
                     )}
                   </dd>
                 </dl>
+
+                <AddCredentialForm
+                  accountId={account.id}
+                  accountName={account.accountName}
+                  action={addCredential}
+                />
               </li>
             );
           })}
-        </ul>
+          </ul>
+        </div>
       )}
     </AdminShell>
   );
