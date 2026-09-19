@@ -192,6 +192,13 @@ Changing these needs a reason, not a preference.
   `/api/dns/v1/zones` did not exist. Every DNS read is `/api/dns/v1/zones/{domain}`, so that probe would have
   returned 404 forever and reported "this token cannot reach DNS" — a false statement about a customer's
   account, which is worse than a missing feature. DNS is absent from the probe list rather than approximated.
+- **The domains page merges two sources and names which is which.** A domain sold to a customer and one found
+  on the provider account are different facts, and a list that blends them silently reads as "our customers'
+  domains" — inviting someone to act on a name nobody has been sold. Every row states its origin, an
+  unassigned one says "Unassigned" rather than leaving a blank that looks like missing data, and a name
+  present in both is folded into one row, because two rows for one domain is how someone deletes the one
+  they were not looking at. Unassigned sorts first: that is the queue, and a page that buries the work under
+  the settled rows is a page nobody uses to do the work.
 - **Discovered provider resources are not customer data, and land in their own table.** A sync finds things on
   the provider account before anyone has decided whose they are. `Domain` and `Website` carry a non-null
   `customerId` because tenancy is the invariant nothing may weaken, so a discovered row goes to
