@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { ProviderAccountStatus, ProviderKind } from '@prisma/client';
+import { DiscoveredKind, ProviderAccountStatus, ProviderKind } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ActivityService } from '../activity/activity.service';
 import { CredentialCipherService } from './credential-cipher.service';
@@ -41,6 +41,18 @@ export type ProviderAccountSummary = {
     revokedAt: Date | null;
     createdAt: Date;
   }>;
+  /** What the last sync found on the account. Local state, not a live call. */
+  discovered: Array<{
+    id: string;
+    kind: DiscoveredKind;
+    /** Null when no key in the provider's payload matched a name. */
+    name: string | null;
+    status: string | null;
+    expiresAt: Date | null;
+    unnamed: boolean;
+    claimed: boolean;
+    lastSeenAt: Date;
+  }>;
 };
 
 @Injectable()
@@ -71,6 +83,21 @@ export class ProviderAccountsService {
             createdAt: true,
           },
         },
+        // What a sync found, so the page can show the account's real contents
+        // without asking the provider — a page load reads local state.
+        discovered: {
+          orderBy: [{ kind: 'asc' }, { name: 'asc' }],
+          select: {
+            id: true,
+            kind: true,
+            name: true,
+            status: true,
+            expiresAt: true,
+            mapped: true,
+            claimedByCustomerId: true,
+            lastSeenAt: true,
+          },
+        },
       },
     });
 
@@ -86,6 +113,19 @@ export class ProviderAccountsService {
       lastSyncedAt: account.lastSyncedAt,
       lastErrorAt: account.lastErrorAt,
       lastError: account.lastError,
+      discovered: account.discovered.map((resource) => ({
+        id: resource.id,
+        kind: resource.kind,
+        // Null when no key in the payload matched a name. Passed through as
+        // null so the page can say so, rather than filled in here.
+        name: resource.name,
+        status: resource.status,
+        expiresAt: resource.expiresAt,
+        /** True when the payload was stored but its name could not be read. */
+        unnamed: resource.name === null,
+        claimed: resource.claimedByCustomerId !== null,
+        lastSeenAt: resource.lastSeenAt,
+      })),
       rateLimit: {
         remaining: this.rateLimiter.remaining(account.id),
         limit: this.rateLimiter.limitFor('default'),

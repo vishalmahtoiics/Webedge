@@ -369,3 +369,120 @@ export function VerifyButton({
     </div>
   );
 }
+
+
+/**
+ * Pulls the account's contents into WebEdge.
+ *
+ * Read-only against the provider and stored locally, so the page can show what
+ * is on the account without asking again — a page load reads local state.
+ *
+ * The report says what came back and what could be read from it, and those are
+ * different numbers on purpose. A payload WebEdge cannot name is stored and
+ * counted as unnamed rather than dropped, and the provider's own key names are
+ * shown so the mapping can be corrected instead of guessed at twice.
+ */
+export function SyncButton({
+  accountId,
+  hasCredential,
+  action,
+}: {
+  accountId: string;
+  hasCredential: boolean;
+  action: (accountId: string) => Promise<
+    | {
+        ok: true;
+        totalStored: number;
+        sources: Array<{
+          area: string;
+          ok: boolean;
+          status: number | null;
+          received: number | null;
+          stored: number;
+          skipped: number;
+          unnamed: number;
+          payloadKeys?: string[];
+          detail?: string;
+        }>;
+      }
+    | { ok: false; message: string }
+  >;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [report, setReport] = useState<Awaited<ReturnType<typeof action>> | null>(null);
+
+  if (!hasCredential) return null;
+
+  return (
+    <div className="mt-3">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setReport(null);
+          startTransition(async () => setReport(await action(accountId)));
+        }}
+        className="rounded-lg border border-line px-3 py-1.5 text-xs font-medium hover:border-ink disabled:opacity-50"
+      >
+        {pending ? 'Syncing…' : 'Sync from provider'}
+      </button>
+
+      {report === null ? null : !report.ok ? (
+        <p role="alert" className="mt-2 rounded-lg border border-state-danger/30 bg-state-danger/5 p-3 text-sm text-state-danger">
+          {report.message}
+        </p>
+      ) : (
+        <div className="mt-2 rounded-lg border border-line bg-surface p-3 text-sm">
+          <p className="font-medium">
+            {report.totalStored} {report.totalStored === 1 ? 'resource' : 'resources'} stored.
+          </p>
+          <ul className="mt-2 flex flex-col gap-1">
+            {report.sources.map((source) => (
+              <li key={source.area} className="flex flex-wrap items-baseline gap-2">
+                <span className="w-28 shrink-0 text-ink-muted">{source.area}</span>
+                {source.ok ? (
+                  <span className="text-state-success">✓ {source.stored} stored</span>
+                ) : (
+                  <span className="text-state-danger">✕ {source.status ?? 'no answer'}</span>
+                )}
+                {/* Received and stored differ when a record had nothing stable
+                    to key on. Saying so beats a count that quietly shrinks. */}
+                {source.ok && source.received !== null && source.received !== source.stored ? (
+                  <span className="text-ink-muted">· {source.received} received</span>
+                ) : null}
+                {source.skipped > 0 ? (
+                  <span className="text-state-warning">· {source.skipped} had no usable id</span>
+                ) : null}
+                {source.unnamed > 0 ? (
+                  <span className="text-state-warning">· {source.unnamed} unnamed</span>
+                ) : null}
+                {source.detail ? <span className="text-ink-muted">· {source.detail}</span> : null}
+              </li>
+            ))}
+          </ul>
+
+          {report.sources.some((source) => source.payloadKeys?.length) ? (
+            <div className="mt-3 rounded-lg border border-state-warning/30 bg-state-warning/5 p-3">
+              <p className="font-medium">Some records could not be read fully.</p>
+              <p className="mt-1 text-ink-muted">
+                The provider publishes no response shapes, so WebEdge matches its fields by name.
+                These are the keys it actually sent — they are what the mapping should be corrected
+                against:
+              </p>
+              <ul className="mt-2 flex flex-col gap-1 font-mono text-xs">
+                {report.sources
+                  .filter((source) => source.payloadKeys?.length)
+                  .map((source) => (
+                    <li key={source.area}>
+                      <span className="text-ink-muted">{source.area}:</span>{' '}
+                      {source.payloadKeys!.join(', ')}
+                    </li>
+                  ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}

@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, P
 import { Realm } from '@prisma/client';
 import { ProviderAccountsService } from './provider-accounts.service';
 import { ProviderVerificationService } from './provider-verification.service';
+import { ProviderSyncService } from './provider-sync.service';
 import { AddCredentialDto, CreateProviderAccountDto, SetStatusDto } from './dto/provider.dto';
 import { CurrentUser, RequirePermissions, RequireRealm } from '../common/decorators/auth.decorators';
 import type { Principal } from '../common/principal';
@@ -20,6 +21,7 @@ export class ProviderAccountsController {
   constructor(
     private readonly accounts: ProviderAccountsService,
     private readonly verification: ProviderVerificationService,
+    private readonly sync: ProviderSyncService,
   ) {}
 
   @Get()
@@ -62,6 +64,19 @@ export class ProviderAccountsController {
   @RequirePermissions('admin.providers.credentials')
   verify(@CurrentUser() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
     return this.verification.verify(principal, id);
+  }
+
+  /**
+   * Pulls the account's inventory into WebEdge.
+   *
+   * Read-only against the provider, but it writes locally and spends the
+   * account's request budget, so it is a deliberate press rather than something
+   * a page load does — page loads read local state.
+   */
+  @Post(':id/sync')
+  @RequirePermissions('admin.providers.credentials')
+  syncAccount(@CurrentUser() principal: Principal, @Param('id', ParseUUIDPipe) id: string) {
+    return this.sync.sync(principal, id);
   }
 
   @Post(':id/credentials')

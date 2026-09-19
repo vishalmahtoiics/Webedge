@@ -305,6 +305,7 @@ model HostingAccount {
 
   credentials ApiCredential[]
   websites    Website[]
+  discovered  DiscoveredResource[]
 
   @@index([status])
   @@map("hosting_accounts")
@@ -313,6 +314,65 @@ model HostingAccount {
 /// Encrypted provider credentials. `keyVersion` names the encryption key used, so
 /// keys can be rotated without decrypting everything at once. The ciphertext never
 /// leaves the server and is never serialized into an API response.
+/// What kind of thing was found on the provider.
+enum DiscoveredKind {
+  DOMAIN
+  WEBSITE
+  VPS
+  SUBSCRIPTION
+}
+
+/// Something that exists on the provider account, as found by a sync.
+///
+/// Deliberately not a `Domain` or a `Website`: both of those are customer-owned
+/// and carry a non-null `customerId`, because tenancy is the one invariant
+/// nothing is allowed to weaken. A resource discovered on the provider has no
+/// customer yet, and inventing one — or making the column nullable so it could
+/// be absent — would put untenanted rows in the tables every tenant query
+/// reads. This is infrastructure, like `HostingAccount`, and staff-only.
+///
+/// `raw` holds the provider's payload as received. The provider does not
+/// publish response shapes — its own MCP package says "response structure will
+/// depend on the API" — so the mapping to `name`, `status` and `expiresAt` is
+/// by candidate key name and can be wrong. Keeping the payload means a mapping
+/// corrected later is applied to what was already fetched, rather than needing
+/// every account re-synced.
+model DiscoveredResource {
+  id               String         @id @default(uuid()) @db.Uuid
+  hostingAccountId String         @db.Uuid
+  hostingAccount   HostingAccount @relation(fields: [hostingAccountId], references: [id], onDelete: Cascade)
+
+  kind DiscoveredKind
+
+  /// Stable identity within an account and kind, for re-running a sync without
+  /// duplicating. The provider's own id when it gave one, else the name.
+  providerKey String
+
+  /// Null when no candidate key matched. Left null rather than filled with a
+  /// placeholder: a made-up name is worse than a visibly missing one.
+  name      String?
+  status    String?
+  expiresAt DateTime?
+
+  /// The provider's payload, as received.
+  raw Json
+  /// Which target fields a key was found for. Absent ones are the mapping's gaps.
+  mapped String[] @default([])
+
+  /// Set once a staff member attaches this to a customer.
+  claimedByCustomerId String? @db.Uuid
+
+  firstSeenAt DateTime @default(now())
+  lastSeenAt  DateTime
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([hostingAccountId, kind, providerKey])
+  @@index([hostingAccountId, kind])
+  @@map("discovered_resources")
+}
+
 model ApiCredential {
   id               String         @id @default(uuid()) @db.Uuid
   hostingAccountId String         @db.Uuid

@@ -3,7 +3,12 @@ import { redirect } from 'next/navigation';
 import { apiAuthed } from '@/lib/api';
 import { AdminShell } from '@/components/admin-shell';
 import { StatusBadge } from '@/components/status-badge';
-import { AddAccountForm, AddCredentialForm, VerifyButton } from '@/components/provider-forms';
+import {
+  AddAccountForm,
+  AddCredentialForm,
+  SyncButton,
+  VerifyButton,
+} from '@/components/provider-forms';
 
 /**
  * Provider accounts.
@@ -31,6 +36,17 @@ type ProviderAccount = {
   lastErrorAt: string | null;
   lastError: string | null;
   rateLimit: { remaining: number; limit: number };
+  discovered: Array<{
+    id: string;
+    kind: string;
+    /** Null when no key in the provider's payload matched a name. */
+    name: string | null;
+    status: string | null;
+    expiresAt: string | null;
+    unnamed: boolean;
+    claimed: boolean;
+    lastSeenAt: string;
+  }>;
   credentials: Array<{
     id: string;
     label: string;
@@ -85,6 +101,32 @@ export default async function AdminProvidersPage() {
     if (!result.ok) return { ok: false as const, message: result.error.message };
     revalidatePath('/admin/providers');
     return { ok: true as const, usable: result.data.usable, areas: result.data.areas };
+  }
+
+  /**
+   * Read-only against the provider; writes locally. Pages then read that local
+   * state instead of calling the provider on every load.
+   */
+  async function syncAccount(accountId: string) {
+    'use server';
+    const result = await apiAuthed<{
+      totalStored: number;
+      sources: Array<{
+        area: string;
+        ok: boolean;
+        status: number | null;
+        received: number | null;
+        stored: number;
+        skipped: number;
+        unnamed: number;
+        payloadKeys?: string[];
+        detail?: string;
+      }>;
+    }>('admin', `/admin/providers/${accountId}/sync`, { method: 'POST' });
+
+    if (!result.ok) return { ok: false as const, message: result.error.message };
+    revalidatePath('/admin/providers');
+    return { ok: true as const, totalStored: result.data.totalStored, sources: result.data.sources };
   }
 
   /**
@@ -202,11 +244,47 @@ export default async function AdminProvidersPage() {
                   </dd>
                 </dl>
 
-                <VerifyButton
-                  accountId={account.id}
-                  hasCredential={active.length > 0}
-                  action={verifyAccount}
-                />
+                {account.discovered.length > 0 ? (
+                  <div className="mt-4 rounded-lg border border-line p-4">
+                    <p className="text-sm font-medium">
+                      On this account · {account.discovered.length}{' '}
+                      {account.discovered.length === 1 ? 'resource' : 'resources'}
+                    </p>
+                    <ul className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
+                      {account.discovered.map((resource) => (
+                        <li key={resource.id} className="flex items-baseline gap-2">
+                          <span className="w-24 shrink-0 text-xs uppercase tracking-wide text-ink-muted">
+                            {resource.kind.toLowerCase()}
+                          </span>
+                          {/* A resource whose name could not be read says so.
+                              Rendering its id in a name's place would read as a
+                              name and be believed. */}
+                          {resource.name === null ? (
+                            <span className="text-state-warning">Name not available</span>
+                          ) : (
+                            <span>{resource.name}</span>
+                          )}
+                          {resource.status ? (
+                            <span className="text-xs text-ink-muted">{resource.status}</span>
+                          ) : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-2">
+                  <VerifyButton
+                    accountId={account.id}
+                    hasCredential={active.length > 0}
+                    action={verifyAccount}
+                  />
+                  <SyncButton
+                    accountId={account.id}
+                    hasCredential={active.length > 0}
+                    action={syncAccount}
+                  />
+                </div>
 
                 <AddCredentialForm
                   accountId={account.id}

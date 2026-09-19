@@ -192,6 +192,25 @@ Changing these needs a reason, not a preference.
   `/api/dns/v1/zones` did not exist. Every DNS read is `/api/dns/v1/zones/{domain}`, so that probe would have
   returned 404 forever and reported "this token cannot reach DNS" — a false statement about a customer's
   account, which is worse than a missing feature. DNS is absent from the probe list rather than approximated.
+- **Discovered provider resources are not customer data, and land in their own table.** A sync finds things on
+  the provider account before anyone has decided whose they are. `Domain` and `Website` carry a non-null
+  `customerId` because tenancy is the invariant nothing may weaken, so a discovered row goes to
+  `DiscoveredResource` — infrastructure, like `HostingAccount`, staff-only. The alternatives were making the
+  tenant nullable, which puts untenanted rows in the tables every tenant query reads, or attributing them to
+  an arbitrary customer, which is a breach no later scoping can undo. Attaching one to a customer is a
+  separate, deliberate act.
+- **The provider's response shapes are unpublished, so the mapping guesses by key name and says when it
+  failed.** Its own generated types read `response: any; // Response structure will depend on the API`. A
+  field with no matching key stays null — never the resource's id wearing a name's clothes, never today's
+  date — the payload is stored as received so a corrected mapping applies without re-syncing every account,
+  and the provider's own key names are shown on screen when nothing matched, which is what the candidate
+  list should be corrected against. `resource-mapping.ts` owns the candidates; correct them there and record
+  what the provider actually sent in `docs/provider-api.md`.
+- **A sync updates, it does not append.** Identity is `(account, kind, providerKey)`, and `providerKey` is the
+  provider's own id or, failing that, the name. A record with neither is skipped and counted rather than
+  stored under a key that changes every run — an inventory that duplicates on every press is worse than one
+  with a visible gap. `firstSeenAt` is never rewritten: it is when the resource appeared on the account, not
+  when someone last looked.
 - **A connection test is every GET and no writes.** That is what makes it safe to run against a live account
   under the rule that nothing outside production is written unless its name starts with `wetest-`. It reports
   per product area, because a token inherits the permissions of whoever created it and reaching domains but
@@ -254,6 +273,8 @@ Tests assert behaviour that would be a security incident if it broke, not line c
 | `test/route-authorization.e2e-spec.ts` | Walks the real router; fails the build on any route without a permission declaration |
 | `test/activity-log-durability.spec.ts` | The trail survives account deletion, redacts secrets, and cannot be rewritten |
 | `test/activity-read.spec.ts` | A customer's trail excludes internal rows, other tenants and staff identities; the two staff trails partition the table with nothing in both |
+| `test/provider-sync.spec.ts` | A sync stores nothing in a customer-owned table, does not duplicate on a second run, and keeps a record it cannot name rather than dropping it |
+| `src/providers/resource-mapping.spec.ts` | An unrecognised payload yields null fields, never an invented name or date, and a record with no stable key is refused |
 | `src/providers/hostinger-client.spec.ts` | An API token never reaches an error message, a log or the audit trail, and an unreadable response is counted as unknown rather than zero |
 | `src/providers/credential-cipher.service.spec.ts` | Tampered ciphertext, tags and IVs are all rejected |
 | `src/rbac/permissions.catalog.spec.ts` | No role is composed from another realm's keys |
