@@ -350,12 +350,16 @@ export function VerifyButton({
                   {area.ok ? '✓' : '✕'} {area.status ?? 'no answer'}
                 </span>
                 {/* A count only when the provider gave a countable list. An
-                    absent count is left absent rather than shown as zero. */}
+                    absent count is left absent rather than shown as zero.
+                    The separator is not decoration: without it a status and a
+                    count sit adjacent, and "200" beside "4 records" reads as
+                    "2004 records" the moment the line is copied anywhere. */}
                 {area.ok && area.count !== null ? (
                   <span className="text-ink-muted">
-                    {area.count} {area.count === 1 ? 'record' : 'records'}
+                    · {area.count} {area.count === 1 ? 'record' : 'records'}
                   </span>
                 ) : null}
+                {area.detail ? <span className="text-ink-muted">·</span> : null}
                 {area.detail ? <span className="text-ink-muted">{area.detail}</span> : null}
               </li>
             ))}
