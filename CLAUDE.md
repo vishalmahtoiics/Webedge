@@ -91,7 +91,11 @@ Changing these needs a reason, not a preference.
 - **Permissions are read per request, not carried in the access token.** Costs a query; buys immediate
   revocation when a role changes or an account is suspended.
 - **Refresh tokens are random and stored hashed, and rotate on use.** Replaying a rotated token revokes the
-  whole family. So never refresh concurrently for one session — `apiAuthed` is the single call site.
+  whole family, so a session must never refresh concurrently. One call site is not enough on its own: a page
+  rendering two `apiAuthed` calls in parallel reaches the refresh twice with the same stored token, and the
+  second replays what the first just rotated. Five pages did exactly that. The rotation is wrapped in React's
+  `cache`, which dedupes **per request** — request scope is the essential part, because a module-level
+  promise is shared across every user the process serves and would hand one person's new token to another.
 - **`activity_logs` is append-only via a database trigger**, not just revoked grants: the migration role owns
   the table and an owner bypasses its own grants.
 - **Reading the trail is a separate service from writing it.** A failed write is a monitoring problem; a read

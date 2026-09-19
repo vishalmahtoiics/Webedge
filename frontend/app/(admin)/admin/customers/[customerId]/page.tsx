@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { apiAuthed } from '@/lib/api';
+import { revalidatePath } from 'next/cache';
 import { AdminShell } from '@/components/admin-shell';
+import { AddUserForm, DatabasePanel } from '@/components/customer-admin-forms';
 import { StatusBadge } from '@/components/status-badge';
 import { formatCurrencyFromPaise } from '@/lib/format';
 
@@ -87,6 +89,63 @@ export default async function AdminCustomerDetailPage({
     );
   }
 
+  async function addUser(input: { fullName: string; email: string }) {
+    'use server';
+    const created = await apiAuthed<{ id: string; temporaryPassword?: string }>(
+      'admin',
+      `/admin/customers/${customerId}/users`,
+      { method: 'POST', body: input },
+    );
+    if (!created.ok) return { ok: false as const, message: created.error.message };
+    revalidatePath(`/admin/customers/${customerId}`);
+    return { ok: true as const, temporaryPassword: created.data.temporaryPassword };
+  }
+
+  async function listDatabases(websiteId: string) {
+    'use server';
+    const result = await apiAuthed<Array<{ name: string; user: string | null }>>(
+      'admin',
+      `/admin/websites/${websiteId}/databases`,
+    );
+    if (!result.ok) return { ok: false as const, message: result.error.message };
+    return { ok: true as const, items: result.data };
+  }
+
+  async function createDatabase(
+    websiteId: string,
+    input: { name: string; user: string; password: string },
+  ) {
+    'use server';
+    const done = await apiAuthed('admin', `/admin/websites/${websiteId}/databases`, {
+      method: 'POST',
+      body: input,
+    });
+    if (!done.ok) return { ok: false as const, message: done.error.message };
+    return { ok: true as const };
+  }
+
+  async function deleteDatabase(websiteId: string, name: string) {
+    'use server';
+    const done = await apiAuthed(
+      'admin',
+      `/admin/websites/${websiteId}/databases/${encodeURIComponent(name)}`,
+      { method: 'DELETE' },
+    );
+    if (!done.ok) return { ok: false as const, message: done.error.message };
+    return { ok: true as const };
+  }
+
+  /** Fetched on demand and never stored: the link authenticates whoever holds it. */
+  async function phpMyAdminLink(websiteId: string, name: string) {
+    'use server';
+    const result = await apiAuthed<{ link: string }>(
+      'admin',
+      `/admin/websites/${websiteId}/databases/${encodeURIComponent(name)}/phpmyadmin`,
+    );
+    if (!result.ok) return { ok: false as const, message: result.error.message };
+    return { ok: true as const, link: result.data.link };
+  }
+
   const c = customer.data;
 
   return (
@@ -129,6 +188,9 @@ export default async function AdminCustomerDetailPage({
               ))}
             </ul>
           )}
+          <div className="mt-3">
+            <AddUserForm action={addUser} />
+          </div>
         </Panel>
 
         <Panel title="Websites">
@@ -137,9 +199,19 @@ export default async function AdminCustomerDetailPage({
           ) : (
             <ul className="flex flex-col gap-2 text-sm">
               {c.websites.map((site) => (
-                <li key={site.id} className="flex items-center justify-between gap-2">
+                <li key={site.id} className="flex flex-wrap items-center justify-between gap-2">
                   <span className="min-w-0 truncate">{site.domain}</span>
-                  <StatusBadge status={site.status} />
+                  <span className="flex items-center gap-2">
+                    <StatusBadge status={site.status} />
+                    <DatabasePanel
+                      websiteId={site.id}
+                      websiteDomain={site.domain}
+                      list={listDatabases}
+                      create={createDatabase}
+                      remove={deleteDatabase}
+                      phpMyAdmin={phpMyAdminLink}
+                    />
+                  </span>
                 </li>
               ))}
             </ul>

@@ -1,3 +1,4 @@
+import { cache } from 'react';
 import 'server-only';
 import { clearSession, getSession, setSession, type Realm } from './session';
 
@@ -113,13 +114,21 @@ export async function apiAuthed<T>(
 }
 
 /**
- * Rotates the refresh token and stores the new pair.
+ * Rotates the refresh token and stores the new pair, once per request.
  *
- * The backend revokes the entire token family if an already-rotated token is
- * replayed, so this must never be called concurrently for one session — hence a
- * single call site, inside apiAuthed.
+ * The backend revokes the entire token family when an already-rotated token is
+ * replayed. A single call site does not prevent that: a page rendering two
+ * `apiAuthed` calls in parallel reaches this twice with the same stored token,
+ * the second replays what the first just rotated, and the session is destroyed.
+ * The symptom is a page that renders and then bounces to sign-in on the next
+ * navigation, which reads as a bug anywhere but here.
+ *
+ * `cache` from React dedupes by argument **for the duration of one request**,
+ * so the two callers share one rotation. Request-scoped is the essential part:
+ * a module-level promise would be shared across every user the process serves,
+ * and would hand one person's newly minted token to another.
  */
-async function refreshSession(realm: Realm): Promise<string | undefined> {
+const refreshSession = cache(async (realm: Realm): Promise<string | undefined> => {
   const { refreshToken } = await getSession(realm);
   if (!refreshToken) return undefined;
 
@@ -131,7 +140,7 @@ async function refreshSession(realm: Realm): Promise<string | undefined> {
 
   await setSession(realm, result.data);
   return result.data.accessToken;
-}
+});
 
 export async function login(
   realm: Realm,

@@ -205,6 +205,16 @@ export default async function AdminDomainsPage({
                     </div>
 
                     <div className="flex items-center gap-3 text-sm sm:justify-end">
+                      {/* DNS only once a domain has an owner: the records
+                          belong to a tenant, and there is none until then. */}
+                      {domain.domainId ? (
+                        <Link
+                          href={`/admin/domains/${domain.domainId}`}
+                          className="tap ring-focus rounded-lg border border-line px-2.5 py-1 text-xs font-medium hover:border-ink"
+                        >
+                          DNS
+                        </Link>
+                      ) : null}
                       {domain.customer ? (
                         <Link
                           href={`/admin/customers/${domain.customer.id}`}
