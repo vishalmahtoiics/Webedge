@@ -40,9 +40,34 @@ export type MappedResource = {
 const CANDIDATES: Record<'name' | 'status' | 'expiresAt' | 'id', string[]> = {
   name: ['domain', 'name', 'domainname', 'hostname', 'host', 'title', 'label'],
   status: ['status', 'state', 'lifecyclestatus'],
-  expiresAt: ['expiresat', 'expirationdate', 'expires', 'expiredate', 'validuntil', 'renewalDate'],
+  expiresAt: ['expiresat', 'expirationdate', 'expires', 'expiredate', 'validuntil', 'renewaldate'],
+  /**
+   * Named exactly, never by pattern.
+   *
+   * A live hosting payload carries `client_id`, `order_id` and
+   * `horizons_uuid` and no `id` at all. Matching anything ending in `_id`
+   * would take `client_id` — the same value on every website of an account —
+   * and collapse nine websites into one row, each sync overwriting the last.
+   * The fallback to the name is the correct outcome there, and it only stays
+   * correct while this list refuses to guess.
+   */
   id: ['id', 'uuid', 'resourceid', 'websiteid', 'domainid', 'virtualmachineid', 'subscriptionid'],
 };
+
+/**
+ * Boolean fields that stand in for a status, and what they mean when true.
+ *
+ * Hosting websites carry no status string; they carry `is_enabled`. Reading it
+ * is not inventing a value — the field says what it says — but it is a
+ * translation, so it is listed here rather than buried in the status lookup,
+ * and a string status always wins over one derived this way.
+ */
+const STATUS_FLAGS: Array<{ key: string; whenTrue: string; whenFalse: string }> = [
+  { key: 'isenabled', whenTrue: 'enabled', whenFalse: 'disabled' },
+  { key: 'enabled', whenTrue: 'enabled', whenFalse: 'disabled' },
+  { key: 'isactive', whenTrue: 'active', whenFalse: 'inactive' },
+  { key: 'issuspended', whenTrue: 'suspended', whenFalse: 'active' },
+];
 
 const normalise = (key: string): string => key.replace(/[_\-\s]/g, '').toLowerCase();
 
@@ -90,6 +115,28 @@ function asDate(value: unknown): Date | null {
 }
 
 /**
+ * The status, from a word if there is one and from a flag if there is not.
+ *
+ * A string wins: it is the provider's own vocabulary, and richer than a
+ * boolean can be. `false` is a value, not an absence — a disabled website must
+ * read as disabled and not as unknown, which is why this cannot go through the
+ * ordinary lookup.
+ */
+function readStatus(record: Record<string, unknown>): string | null {
+  const stated = asText(pick(record, CANDIDATES.status));
+  if (stated !== null) return stated;
+
+  const byNormalised = new Map<string, unknown>();
+  for (const [key, value] of Object.entries(record)) byNormalised.set(normalise(key), value);
+
+  for (const flag of STATUS_FLAGS) {
+    const value = byNormalised.get(flag.key);
+    if (typeof value === 'boolean') return value ? flag.whenTrue : flag.whenFalse;
+  }
+  return null;
+}
+
+/**
  * Turns one provider record into something storable.
  *
  * `providerKey` is the identity a re-sync matches on, so it must be stable:
@@ -106,7 +153,7 @@ export function mapResource(row: unknown): MappedResource | null {
 
   const id = asText(pick(record, CANDIDATES.id));
   const name = asText(pick(record, CANDIDATES.name));
-  const status = asText(pick(record, CANDIDATES.status));
+  const status = readStatus(record);
   const expiresAt = asDate(pick(record, CANDIDATES.expiresAt));
 
   if (id !== null) mapped.push('id');

@@ -205,7 +205,15 @@ Changing these needs a reason, not a preference.
   date — the payload is stored as received so a corrected mapping applies without re-syncing every account,
   and the provider's own key names are shown on screen when nothing matched, which is what the candidate
   list should be corrected against. `resource-mapping.ts` owns the candidates; correct them there and record
-  what the provider actually sent in `docs/provider-api.md`.
+  what the provider actually sent in `docs/provider-api.md`. **Candidate keys are named exactly, never
+  matched by pattern.** The live hosting payload has no `id` and carries `client_id` and `order_id`; taking
+  anything ending in `_id` would key every website on the same `client_id`, collapsing nine into one row that
+  each sync overwrites — an inventory that looks plausible and is wrong. Identity falling back to the name is
+  the correct outcome there, and stays correct only while the list refuses to guess.
+- **What a resource is expected to have depends on what it is.** A website has no expiry; the subscription
+  paying for it does. Reporting a missing `expiresAt` on a website as a mapping gap is a false alarm, and a
+  false alarm on a diagnostic is worse than none — it teaches whoever reads it to ignore the line where a
+  real gap will appear.
 - **A sync updates, it does not append.** Identity is `(account, kind, providerKey)`, and `providerKey` is the
   provider's own id or, failing that, the name. A record with neither is skipped and counted rather than
   stored under a key that changes every run — an inventory that duplicates on every press is worse than one

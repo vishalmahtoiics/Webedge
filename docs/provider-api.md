@@ -63,6 +63,48 @@ token cannot reach DNS" — a false statement about the customer's account. DNS 
 checked against a domain from the portfolio instead, and is deliberately absent
 from the probe list.
 
+## Response shapes, as observed
+
+The provider publishes none — its generated types read
+`response: any; // Response structure will depend on the API` and its README
+carries no example bodies. What follows was observed from a live account on
+19 September 2026 and is the only record of it.
+
+### `GET /api/hosting/v1/websites`
+
+```
+client_id, created_at, domain, horizons_uuid, is_enabled, order_id,
+parent_domain, root_directory, username, vhost_type, website_type
+```
+
+Three things that shaped the mapping:
+
+- **There is no `id`.** Identity falls back to `domain`, which is correct.
+  `client_id` is the same value on *every* website of an account and `order_id`
+  belongs to the order, not the site. Matching either — for instance by taking
+  anything ending in `_id` — collapses every website into one row, each sync
+  overwriting the last, and leaves an inventory that looks plausible and is
+  wrong. `resource-mapping.spec.ts` fails if the candidate list is loosened
+  that way.
+- **There is no `status`.** There is `is_enabled`, a boolean. The mapping reads
+  it as `enabled`/`disabled`, and `false` is a value rather than an absence: a
+  disabled site must read disabled, not unknown.
+- **There is no expiry.** A website does not expire; the subscription paying
+  for it does. Expected fields are therefore declared per kind, so a missing
+  expiry on a website is not reported as a mapping gap — a false alarm on a
+  diagnostic teaches people to ignore the line where a real gap will appear.
+
+`username` and `root_directory` correspond to `Website.providerUsername` and
+`Website.documentRoot`, both internal and never serialized to a customer.
+
+### Other areas
+
+A domain from `/api/domains/v1/portfolio` resolved a name and a status word
+(`active`). A subscription from `/api/billing/v1/subscriptions` resolved a name
+(the product, e.g. `.COM Domain`, `Business Web Hosting`) and a status
+(`active`, `non_renewing`). Their exact key lists have not been captured; add
+them here when they are.
+
 ## Agency hosting is a separate product, not a flag
 
 `agency-hosting` has its own paths — `/api/agency-hosting/v1/websites`,

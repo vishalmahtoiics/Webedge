@@ -37,6 +37,26 @@ const SOURCES: Array<{ kind: DiscoveredKind; area: string; path: string }> = [
   { kind: DiscoveredKind.SUBSCRIPTION, area: 'billing', path: '/api/billing/v1/subscriptions' },
 ];
 
+/**
+ * Which fields each kind of resource is expected to have.
+ *
+ * A hosting website has no expiry — the subscription that pays for it does —
+ * so reporting a missing `expiresAt` there is a false alarm, and a false alarm
+ * on a diagnostic is worse than none: it teaches whoever reads it to ignore the
+ * line where a real gap will appear.
+ *
+ * Confirmed against a live account: the websites payload carries
+ * `client_id, created_at, domain, horizons_uuid, is_enabled, order_id,
+ * parent_domain, root_directory, username, vhost_type, website_type` — a name
+ * and a status flag, and nothing resembling an expiry.
+ */
+const EXPECTED_FIELDS: Record<DiscoveredKind, string[]> = {
+  [DiscoveredKind.DOMAIN]: ['name', 'status', 'expiresAt'],
+  [DiscoveredKind.WEBSITE]: ['name', 'status'],
+  [DiscoveredKind.VPS]: ['name', 'status'],
+  [DiscoveredKind.SUBSCRIPTION]: ['name', 'status', 'expiresAt'],
+};
+
 export type SyncedSource = {
   area: string;
   kind: DiscoveredKind;
@@ -226,7 +246,7 @@ export class ProviderSyncService {
     // nothing is not a mapping gap.
     const unresolved =
       stored > 0
-        ? ['name', 'status', 'expiresAt'].filter((field) => !resolvedSomewhere.has(field))
+        ? EXPECTED_FIELDS[source.kind].filter((field) => !resolvedSomewhere.has(field))
         : [];
 
     return {

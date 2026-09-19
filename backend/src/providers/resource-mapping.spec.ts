@@ -114,6 +114,93 @@ describe('mapping a record', () => {
   });
 });
 
+/**
+ * The hosting payload a live account actually sent. Every key here was
+ * observed, not supposed:
+ *
+ *   client_id, created_at, domain, horizons_uuid, is_enabled, order_id,
+ *   parent_domain, root_directory, username, vhost_type, website_type
+ *
+ * It has no `id`, no `status` and no expiry, which broke three assumptions at
+ * once.
+ */
+describe('a real hosting website payload', () => {
+  const website = {
+    client_id: 4210,
+    created_at: '2025-11-02T09:12:00Z',
+    domain: 'speflsc.in',
+    horizons_uuid: null,
+    is_enabled: true,
+    order_id: 99100,
+    parent_domain: null,
+    root_directory: '/public_html',
+    username: 'u634179083',
+    vhost_type: 'main',
+    website_type: 'hosting',
+  };
+
+  /**
+   * The one that would have been silently catastrophic. There is no `id`, and
+   * `client_id` is the same on every website of an account — matching it would
+   * collapse nine websites into one row, each sync overwriting the last, and
+   * the inventory would look plausible while being wrong.
+   */
+  it('keys on the domain, never on client_id or order_id', () => {
+    const mapped = mapResource(website);
+
+    expect(mapped?.providerKey).toBe('speflsc.in');
+    expect(mapped?.providerKey).not.toBe('4210');
+    expect(mapped?.providerKey).not.toBe('99100');
+    expect(mapped?.mapped).not.toContain('id');
+  });
+
+  it('keeps two websites of one account distinct', () => {
+    const a = mapResource({ ...website, domain: 'speflsc.in' });
+    const b = mapResource({ ...website, domain: 'craftygiftz.com' });
+
+    expect(a?.providerKey).not.toBe(b?.providerKey);
+  });
+
+  /** No status word, so the status comes from the flag the payload does carry. */
+  it('reads is_enabled as the status', () => {
+    expect(mapResource(website)?.status).toBe('enabled');
+    expect(mapResource({ ...website, is_enabled: false })?.status).toBe('disabled');
+  });
+
+  it('resolves a name and a status, and no expiry', () => {
+    const mapped = mapResource(website);
+
+    expect(mapped?.name).toBe('speflsc.in');
+    expect(mapped?.mapped).toContain('status');
+    // Websites do not expire; the subscription paying for one does.
+    expect(mapped?.expiresAt).toBeNull();
+  });
+});
+
+describe('a status that is a flag rather than a word', () => {
+  /** `false` is a value. A disabled site must read disabled, not unknown. */
+  it('does not treat false as absent', () => {
+    expect(mapResource({ domain: 'a.test', is_enabled: false })?.status).toBe('disabled');
+    expect(mapResource({ domain: 'a.test', is_active: false })?.status).toBe('inactive');
+    expect(mapResource({ domain: 'a.test', is_suspended: true })?.status).toBe('suspended');
+  });
+
+  /** The provider's own vocabulary is richer than a boolean, so it wins. */
+  it('prefers a stated status over a flag', () => {
+    const mapped = mapResource({ domain: 'a.test', status: 'running', is_enabled: false });
+    expect(mapped?.status).toBe('running');
+  });
+
+  /** A flag that is not a boolean is not a status. */
+  it.each([
+    ['a string', 'yes'],
+    ['a number', 1],
+    ['null', null],
+  ])('ignores is_enabled when it is %s', (_name, value) => {
+    expect(mapResource({ domain: 'a.test', is_enabled: value })?.status).toBeNull();
+  });
+});
+
 describe('reading dates', () => {
   it.each([
     ['an ISO timestamp', '2027-03-14T00:00:00Z', '2027-03-14T00:00:00.000Z'],
